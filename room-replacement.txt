@@ -1,0 +1,82 @@
+  renderRoomContent(startY: number) {
+    // Grid de estilos de habitación
+    const styles = [
+      { id: 'style1', name: 'Básico', key: 'default' },
+      { id: 'anxious', name: 'Anxious', key: 'anxious' },
+      { id: 'edgy', name: 'Edgy', key: 'edgy' },
+      { id: 'geek', name: 'Geek', key: 'geek' },
+      { id: 'intelectual', name: 'Intelectual', key: 'intelectual' },
+      { id: 'sassy', name: 'Sassy', key: 'sassy' },
+    ];
+
+    const cellSize = 70;
+    const gridPadding = 20;
+    const cellGap = 10;
+    const cols = 3;
+    const gridStartY = startY + 20;
+
+    styles.forEach((style, index) => {
+      const col = index % cols;
+      const row = Math.floor(index / cols);
+      const cellX = gridPadding + col * (cellSize + cellGap);
+      const cellY = gridStartY + row * (cellSize + cellGap);
+
+      // Verificar si está seleccionado
+      const isSelected = this.pet.currentRoom === style.id;
+
+      // Fondo de la celda
+      this.ctx.fillStyle = '#fff';
+      this.ctx.fillRect(cellX, cellY, cellSize, cellSize);
+
+      // Borde (doble si está seleccionado)
+      this.ctx.strokeStyle = '#000';
+      this.ctx.lineWidth = isSelected ? 3 : 1;
+      this.ctx.strokeRect(cellX, cellY, cellSize, cellSize);
+
+      // Segundo borde interior si está seleccionado
+      if (isSelected) {
+        this.ctx.lineWidth = 1;
+        this.ctx.strokeRect(cellX + 2, cellY + 2, cellSize - 4, cellSize - 4);
+      }
+
+      // Imagen del estilo
+      const imgSize = 50;
+      const imgX = cellX + (cellSize - imgSize) / 2;
+      const imgY = cellY + 5;
+
+      const styleImg = this.styleIconCache.get(style.key);
+
+      if (styleImg && styleImg.complete && styleImg.naturalHeight > 0) {
+        this.ctx.drawImage(styleImg, imgX, imgY, imgSize, imgSize);
+      } else {
+        // Fallback: cuadrado blanco con emoji
+        this.ctx.fillStyle = '#fff';
+        this.ctx.fillRect(imgX, imgY, imgSize, imgSize);
+        this.ctx.strokeStyle = '#000';
+        this.ctx.lineWidth = 1;
+        this.ctx.strokeRect(imgX, imgY, imgSize, imgSize);
+
+        // Emoji de casa como fallback
+        this.ctx.font = '30px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillStyle = '#000';
+        this.ctx.fillText('🏠', imgX + imgSize / 2, imgY + imgSize / 2);
+      }
+
+      // Nombre del estilo abajo
+      this.ctx.textAlign = 'center';
+      this.ctx.font = '10px Arial';
+      this.ctx.fillStyle = '#000';
+      this.ctx.textBaseline = 'alphabetic';
+      this.ctx.fillText(style.name, cellX + cellSize / 2, cellY + cellSize - 3);
+
+      // Checkmark si está seleccionado (esquina superior derecha)
+      if (isSelected) {
+        this.ctx.textAlign = 'right';
+        this.ctx.font = 'bold 14px Arial';
+        this.ctx.fillStyle = '#000';
+        this.ctx.fillText('✓', cellX + cellSize - 3, cellY + 15);
+      }
+    });
+  }
