@@ -55,9 +55,10 @@ export class GameLoop {
 
   start(onUpdate?: (pet: Pet) => void) {
     this.onUpdate = onUpdate;
+    this.lastUpdate = Date.now();
 
-    // Update loop (60 FPS)
-    setInterval(() => {
+    // Update loop usando requestAnimationFrame (más suave que setInterval)
+    const gameLoop = () => {
       const now = Date.now();
       const deltaTime = ((now - this.lastUpdate) / 1000) * this.timeMultiplier;
       this.lastUpdate = now;
@@ -72,11 +73,17 @@ export class GameLoop {
         this.onUpdate(this.pet);
       }
 
-      // Guardar cada 10 segundos
-      if (Math.random() < 0.016) { // ~1 vez por segundo
+      // Guardar cada ~10 segundos (a 60fps, 600 frames = 10s)
+      if (Math.random() < 0.0016) { // ~1 vez cada 10 segundos
         this.save();
       }
-    }, 1000 / 60); // 60 FPS
+
+      // Siguiente frame
+      requestAnimationFrame(gameLoop);
+    };
+
+    // Iniciar loop
+    requestAnimationFrame(gameLoop);
   }
 
   private checkNotifications() {

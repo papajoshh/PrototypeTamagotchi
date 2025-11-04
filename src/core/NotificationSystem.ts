@@ -16,6 +16,7 @@ export interface NotificationConfig {
 export class NotificationSystem {
   private permission: NotificationPermission = 'default';
   private audioContext: AudioContext | null = null;
+  private notificationSound: HTMLAudioElement | null = null;
   private lastNotifications: Map<NotificationType, number> = new Map();
   private readonly NOTIFICATION_COOLDOWN = 60000; // 1 minuto entre notificaciones del mismo tipo
 
@@ -61,6 +62,17 @@ export class NotificationSystem {
   constructor() {
     this.requestPermission();
     this.initAudioContext();
+    this.loadNotificationSound();
+  }
+
+  private loadNotificationSound() {
+    try {
+      this.notificationSound = new Audio('/assets/sounds/notification.mp3');
+      this.notificationSound.volume = 0.5; // Volumen al 50%
+      console.log('[Notifications] Custom sound loaded');
+    } catch (e) {
+      console.warn('[Notifications] Failed to load custom sound:', e);
+    }
   }
 
   private async requestPermission() {
@@ -107,8 +119,8 @@ export class NotificationSystem {
       });
     }
 
-    // Reproducir sonido
-    this.playSound(config.soundFrequency || 440, config.soundDuration || 200);
+    // Reproducir sonido personalizado
+    this.playSound();
 
     // Actualizar último envío
     this.lastNotifications.set(type, Date.now());
@@ -116,28 +128,15 @@ export class NotificationSystem {
     console.log(`[Notifications] Sent: ${type} - ${config.title}`);
   }
 
-  private playSound(frequency: number, duration: number) {
-    if (!this.audioContext) return;
+  private playSound() {
+    if (!this.notificationSound) return;
 
     try {
-      const oscillator = this.audioContext.createOscillator();
-      const gainNode = this.audioContext.createGain();
-
-      oscillator.connect(gainNode);
-      gainNode.connect(this.audioContext.destination);
-
-      oscillator.frequency.value = frequency;
-      oscillator.type = 'sine';
-
-      // Envelope: fade in y fade out
-      const now = this.audioContext.currentTime;
-      gainNode.gain.setValueAtTime(0, now);
-      gainNode.gain.linearRampToValueAtTime(0.3, now + 0.01); // Fade in rápido
-      gainNode.gain.linearRampToValueAtTime(0.3, now + duration / 1000 - 0.05);
-      gainNode.gain.linearRampToValueAtTime(0, now + duration / 1000); // Fade out
-
-      oscillator.start(now);
-      oscillator.stop(now + duration / 1000);
+      // Reiniciar el audio si ya se está reproduciendo
+      this.notificationSound.currentTime = 0;
+      this.notificationSound.play().catch(e => {
+        console.warn('[Notifications] Failed to play sound:', e);
+      });
     } catch (e) {
       console.warn('[Notifications] Failed to play sound:', e);
     }

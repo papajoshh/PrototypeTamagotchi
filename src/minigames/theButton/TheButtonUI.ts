@@ -1,5 +1,6 @@
 import { TheButtonGame, TheButtonGameState } from './TheButtonGame';
 import { Pet } from '../../core/Pet';
+import { LifeStage } from '../../core/LifeStage';
 
 export class TheButtonUI {
   private canvas: HTMLCanvasElement;
@@ -13,15 +14,19 @@ export class TheButtonUI {
   private clockSprite: HTMLImageElement | null = null;
   private petSprite: HTMLImageElement | null = null;
   private eggSprite: HTMLImageElement | null = null;
+  private timesUpBackgroundSprite: HTMLImageElement | null = null;
+  private timesUpLetterSprite: HTMLImageElement | null = null;
 
   // Estado visual
   private isButtonPressed: boolean = false;
   private buttonPressTimer: number = 0;
   private transitionStartTime: number = 0;
   private readonly TRANSITION_DURATION = 2000; // 2 segundos de transición
+  private gameOverStartTime: number = 0;
 
   // Callbacks
   onGameEnd?: (scorePercentage: number) => void;
+  private hasCalledOnGameEnd: boolean = false;
 
   constructor(canvas: HTMLCanvasElement, pet: Pet) {
     this.canvas = canvas;
@@ -50,6 +55,13 @@ export class TheButtonUI {
     // Huevo de transición
     this.eggSprite = new Image();
     this.eggSprite.src = '/assets/minigames/egg.png';
+
+    // Times Up animation
+    this.timesUpBackgroundSprite = new Image();
+    this.timesUpBackgroundSprite.src = '/assets/minigames/TimesUp_Background.png';
+
+    this.timesUpLetterSprite = new Image();
+    this.timesUpLetterSprite.src = '/assets/minigames/TIMES UP_letter.png';
   }
 
   private setupEventListeners(): void {
@@ -100,8 +112,12 @@ export class TheButtonUI {
   }
 
   private handleGameEnd(): void {
+    // Prevenir múltiples llamadas (doble-click accidental)
+    if (this.hasCalledOnGameEnd) return;
+
     const scorePercentage = this.game.getScorePercentage();
     if (this.onGameEnd) {
+      this.hasCalledOnGameEnd = true;
       this.onGameEnd(scorePercentage);
     }
   }
@@ -210,10 +226,29 @@ export class TheButtonUI {
 
     // Mascota en el centro
     if (this.petSprite && this.petSprite.complete) {
-      const petSize = 150;
-      const petX = this.canvas.width / 2 - petSize / 2;
+      const maxHeight = 150;
+      const aspectRatio = this.petSprite.width / this.petSprite.height;
+      const petHeight = maxHeight;
+      const petWidth = petHeight * aspectRatio;
+      const petX = this.canvas.width / 2 - petWidth / 2;
       const petY = 260;
-      this.ctx.drawImage(this.petSprite, petX, petY, petSize, petSize);
+      this.ctx.drawImage(this.petSprite, petX, petY, petWidth, petHeight);
+    } else {
+      // Fallback to emoji if no sprite
+      this.ctx.font = '80px Arial';
+      this.ctx.textAlign = 'center';
+      this.ctx.textBaseline = 'middle';
+      const stageEmojis = {
+        [LifeStage.Egg]: '🥚',
+        [LifeStage.Baby]: '🐣',
+        [LifeStage.Child]: '🐥',
+        [LifeStage.Young]: '🦆',
+        [LifeStage.Adult]: '🦢',
+        [LifeStage.ReadyToAscend]: '✨',
+        [LifeStage.Dead]: '💀',
+      };
+      this.ctx.fillStyle = '#000';
+      this.ctx.fillText(stageEmojis[this.pet.stage], this.canvas.width / 2, 310);
     }
 
     // Botón de inicio (más abajo)
@@ -258,8 +293,11 @@ export class TheButtonUI {
 
     // Mascota en el centro (más agitada según score)
     if (this.petSprite && this.petSprite.complete) {
-      const petSize = 120;
-      const petX = this.canvas.width / 2 - petSize / 2;
+      const maxHeight = 120;
+      const aspectRatio = this.petSprite.width / this.petSprite.height;
+      const petHeight = maxHeight;
+      const petWidth = petHeight * aspectRatio;
+      const petX = this.canvas.width / 2 - petWidth / 2;
       const petY = 180;
 
       // Efecto de shake basado en el score
@@ -267,7 +305,27 @@ export class TheButtonUI {
       const offsetX = (Math.random() - 0.5) * shakeAmount;
       const offsetY = (Math.random() - 0.5) * shakeAmount;
 
-      this.ctx.drawImage(this.petSprite, petX + offsetX, petY + offsetY, petSize, petSize);
+      this.ctx.drawImage(this.petSprite, petX + offsetX, petY + offsetY, petWidth, petHeight);
+    } else {
+      // Fallback to emoji if no sprite (con efecto de shake)
+      const shakeAmount = Math.min(state.score * 0.5, 10);
+      const offsetX = (Math.random() - 0.5) * shakeAmount;
+      const offsetY = (Math.random() - 0.5) * shakeAmount;
+
+      this.ctx.font = '80px Arial';
+      this.ctx.textAlign = 'center';
+      this.ctx.textBaseline = 'middle';
+      const stageEmojis = {
+        [LifeStage.Egg]: '🥚',
+        [LifeStage.Baby]: '🐣',
+        [LifeStage.Child]: '🐥',
+        [LifeStage.Young]: '🦆',
+        [LifeStage.Adult]: '🦢',
+        [LifeStage.ReadyToAscend]: '✨',
+        [LifeStage.Dead]: '💀',
+      };
+      this.ctx.fillStyle = '#000';
+      this.ctx.fillText(stageEmojis[this.pet.stage], this.canvas.width / 2 + offsetX, 230 + offsetY);
     }
 
     // Texto "tap tap tap"
@@ -306,66 +364,112 @@ export class TheButtonUI {
   private renderFinishedScreen(state: TheButtonGameState): void {
     this.ctx.save();
 
-    // Fondo con overlay
-    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+    // Fondo blanco
+    this.ctx.fillStyle = '#fff';
     this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
-    // Panel central
-    const panelX = 40;
-    const panelY = 150;
-    const panelW = 400;
-    const panelH = 300;
-
-    this.ctx.fillStyle = '#fff';
-    this.ctx.fillRect(panelX, panelY, panelW, panelH);
-    this.ctx.strokeStyle = '#000';
-    this.ctx.lineWidth = 3;
-    this.ctx.strokeRect(panelX, panelY, panelW, panelH);
-
-    // "TIME'S UP"
-    this.ctx.fillStyle = '#000';
-    this.ctx.font = 'bold 40px Arial';
-    this.ctx.textAlign = 'center';
-    this.ctx.fillText("TIME'S UP", this.canvas.width / 2, panelY + 60);
-
-    // Score final
-    this.ctx.font = 'bold 48px Arial';
-    this.ctx.fillText(`${state.score}`, this.canvas.width / 2, panelY + 130);
-
-    // Mostrar premios ganados
-    const rewards = this.game.calculateRewards();
-    this.ctx.font = 'bold 16px Arial';
-    this.ctx.textAlign = 'left';
-
-    let rewardY = panelY + 170;
-    const rewardX = panelX + 60;
-
-    if (rewards.tier1 > 0) {
-      this.ctx.fillText(`⭐ Ingrediente Básico x${rewards.tier1}`, rewardX, rewardY);
-      rewardY += 25;
-    }
-    if (rewards.tier2 > 0) {
-      this.ctx.fillText(`⭐⭐ Ingrediente Medio x${rewards.tier2}`, rewardX, rewardY);
-      rewardY += 25;
-    }
-    if (rewards.tier3 > 0) {
-      this.ctx.fillText(`⭐⭐⭐ Ingrediente Premium x${rewards.tier3}`, rewardX, rewardY);
-      rewardY += 25;
+    // Game over animation
+    const elapsed = Date.now() - (this.gameOverStartTime || Date.now());
+    if (!this.gameOverStartTime) {
+      this.gameOverStartTime = Date.now();
     }
 
-    // Botón para continuar
-    const buttonX = this.canvas.width / 2 - 100;
-    const buttonY = panelY + panelH - 80;
-    const buttonW = 200;
-    const buttonH = 50;
+    const canvasWidth = this.canvas.width;
+    const centerX = canvasWidth / 2;
+    const centerY = 200;
 
-    this.ctx.fillStyle = '#000';
-    this.ctx.fillRect(buttonX, buttonY, buttonW, buttonH);
+    // Background slides from left (0.1s)
+    const bgProgress = Math.min(elapsed / 100, 1);
+    const bgX = centerX - canvasWidth * (1 - bgProgress);
 
-    this.ctx.fillStyle = '#fff';
-    this.ctx.font = 'bold 20px Arial';
-    this.ctx.textAlign = 'center';
-    this.ctx.fillText('Ver Recompensas', this.canvas.width / 2, buttonY + 33);
+    if (this.timesUpBackgroundSprite && this.timesUpBackgroundSprite.complete) {
+      const bgMaxW = 400;
+      const bgMaxH = 120;
+      const bgAspect = this.timesUpBackgroundSprite.width / this.timesUpBackgroundSprite.height;
+      let bgW = bgMaxW;
+      let bgH = bgMaxH;
+
+      if (bgAspect > bgMaxW / bgMaxH) {
+        bgH = bgW / bgAspect;
+      } else {
+        bgW = bgH * bgAspect;
+      }
+
+      this.ctx.drawImage(this.timesUpBackgroundSprite, bgX - bgW / 2, centerY - bgH / 2, bgW, bgH);
+    } else {
+      this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+      this.ctx.fillRect(bgX - 200, centerY - 60, 400, 120);
+    }
+
+    // Letter enters from right with overshoot (0.2s after bg, total 0.3s)
+    if (elapsed >= 100) {
+      const letterElapsed = elapsed - 100;
+      const letterProgress = Math.min(letterElapsed / 200, 1);
+      const easeProgress = letterProgress < 1 ?
+        1 + 1.7 * Math.pow(letterProgress - 1, 3) + Math.pow(letterProgress - 1, 2) :
+        letterProgress;
+      const letterX = centerX + canvasWidth * (1 - easeProgress);
+
+      if (this.timesUpLetterSprite && this.timesUpLetterSprite.complete) {
+        const letterMaxW = 300;
+        const letterMaxH = 100;
+        const letterAspect = this.timesUpLetterSprite.width / this.timesUpLetterSprite.height;
+        let letterW = letterMaxW;
+        let letterH = letterMaxH;
+
+        if (letterAspect > letterMaxW / letterMaxH) {
+          letterH = letterW / letterAspect;
+        } else {
+          letterW = letterH * letterAspect;
+        }
+
+        this.ctx.drawImage(this.timesUpLetterSprite, letterX - letterW / 2, centerY - letterH / 2, letterW, letterH);
+      } else {
+        this.ctx.fillStyle = '#000';
+        this.ctx.font = 'bold 48px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.fillText("TIME'S UP", letterX, centerY);
+      }
+    }
+
+    // Score y recompensas debajo
+    if (elapsed >= 300) {
+      this.ctx.fillStyle = '#000';
+      this.ctx.font = 'bold 32px Arial';
+      this.ctx.textAlign = 'center';
+      this.ctx.fillText(`Score: ${state.score}`, centerX, centerY + 100);
+
+      const rewards = this.game.calculateRewards();
+      this.ctx.font = 'bold 16px Arial';
+      this.ctx.textAlign = 'center';
+
+      let rewardY = centerY + 140;
+      if (rewards.tier1 > 0) {
+        this.ctx.fillText(`⭐ Ingrediente Básico x${rewards.tier1}`, centerX, rewardY);
+        rewardY += 25;
+      }
+      if (rewards.tier2 > 0) {
+        this.ctx.fillText(`⭐⭐ Ingrediente Medio x${rewards.tier2}`, centerX, rewardY);
+        rewardY += 25;
+      }
+      if (rewards.tier3 > 0) {
+        this.ctx.fillText(`⭐⭐⭐ Ingrediente Premium x${rewards.tier3}`, centerX, rewardY);
+        rewardY += 25;
+      }
+
+      // Botón "Ver Recompensas"
+      const buttonX = centerX - 100;
+      const buttonY = centerY + 200;
+      const buttonW = 200;
+      const buttonH = 50;
+
+      this.ctx.fillStyle = '#000';
+      this.ctx.fillRect(buttonX, buttonY, buttonW, buttonH);
+
+      this.ctx.fillStyle = '#fff';
+      this.ctx.font = 'bold 20px Arial';
+      this.ctx.fillText('Ver Recompensas', centerX, buttonY + 33);
+    }
 
     this.ctx.restore();
   }

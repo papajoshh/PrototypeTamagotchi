@@ -26,7 +26,7 @@ const DEATH_BY_HUNGER = {
 };
 
 export class Hunger {
-  private stars: number = 3; // 0-3 estrellas (3 = satisfecho, 0 = hambriento)
+  private stars: number = 1; // 0-3 estrellas (3 = satisfecho, 0 = hambriento)
   private timeToNextLevel: number = 0;
   private deathTimer: number = 0;
   private deathThreshold: number = 0;
@@ -99,7 +99,7 @@ export class Hunger {
   }
 
   reset() {
-    this.stars = 3;
+    this.stars = 1;
     this.deathTimer = 0;
     this.deathThreshold = 0;
   }

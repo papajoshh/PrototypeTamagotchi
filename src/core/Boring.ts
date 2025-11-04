@@ -14,7 +14,7 @@ const BORING_TIMES = {
 };
 
 export class Boring {
-  private stars: number = 3; // 0-3 estrellas (3 = entretenido, 0 = aburrido)
+  private stars: number = 1; // 0-3 estrellas (3 = entretenido, 0 = aburrido)
   private timeToNextLevel: number = 0;
 
   constructor(stage: LifeStage) {
@@ -60,7 +60,7 @@ export class Boring {
   }
 
   reset() {
-    this.stars = 3;
+    this.stars = 1;
   }
 
   serialize() {

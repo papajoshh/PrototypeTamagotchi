@@ -60,23 +60,11 @@ ui.onCure = () => {
 };
 
 ui.onTapEgg = () => {
-  // Si está muerto, reiniciar completamente
+  // Si está muerto, revivir directamente como Baby
   if (pet.stage === 6) { // LifeStage.Dead
-    console.log('[Game] Restarting after death...');
-    pet.stage = 0; // LifeStage.Egg
-    pet.growthPoints = 0;
-    pet.personality = null;
-    pet.wasNeglected = false;
-    pet.hunger.reset();
-    pet.boring.reset();
-    // Actualizar timers al stage Egg
-    pet.hunger.onStageChange(0); // LifeStage.Egg
-    pet.boring.onStageChange(0);
-    pet.poop = new Poop();
-    pet.illness = new Illness();
-    pet.memorySystem = new MemorySystem();
-    // Mantener inventario al reiniciar
-    console.log('[Game] Restarted! Tap the egg to hatch.');
+    console.log('[Game] Reviving pet...');
+    pet.revive(); // Usa el método revive() que ya resetea todo correctamente
+    console.log('[Game] Pet revived as Baby with 1⭐ hunger and 1⭐ fun!');
   } else {
     // Huevo normal
     pet.tapEgg();

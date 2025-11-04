@@ -3,6 +3,9 @@ import { LifeStage } from '../core/LifeStage';
 import { TIME_MODES } from '../core/GameLoop';
 import { TheButtonUI } from '../minigames/theButton/TheButtonUI';
 import { TheButtonRewards } from '../minigames/theButton/TheButtonRewards';
+import { EdgyBunBunUI } from '../minigames/edgyBunBun/EdgyBunBunUI';
+import { GuessTheHigherUI } from '../minigames/guessTheHigher/GuessTheHigherUI';
+import { SimonDiceUI } from '../minigames/simonDice/SimonDiceUI';
 import { Ingredient } from '../core/Ingredient';
 
 export class GameUI {
@@ -61,7 +64,7 @@ export class GameUI {
   ];
 
   // Estado del minijuego activo
-  private activeMinigame: TheButtonUI | null = null;
+  private activeMinigame: TheButtonUI | EdgyBunBunUI | SimonDiceUI | GuessTheHigherUI | null = null;
   private minigameRewards: TheButtonRewards | null = null;
   private showingRewards: boolean = false;
 
@@ -948,6 +951,9 @@ export class GameUI {
   }
 
   renderNeedsIndicators() {
+    // No mostrar necesidades si es Egg (el huevo no tiene hambre ni aburrimiento)
+    if (this.pet.stage === LifeStage.Egg) return;
+
     this.ctx.save();
 
     const x = 20;
@@ -1127,6 +1133,9 @@ export class GameUI {
   }
 
   renderActionButtons() {
+    // No mostrar botones de acción si es Egg (el huevo no puede comer, jugar, etc.)
+    if (this.pet.stage === LifeStage.Egg) return;
+
     const y = 560;
     const buttonWidth = 160; // 3 botones: 480px / 3 = 160px
     const buttonHeight = 60;
@@ -1222,8 +1231,8 @@ export class GameUI {
   }
 
   renderStateIndicators() {
-    // No mostrar indicadores si está muerto
-    if (this.pet.stage === LifeStage.Dead) return;
+    // No mostrar indicadores si es Egg o está muerto
+    if (this.pet.stage === LifeStage.Egg || this.pet.stage === LifeStage.Dead) return;
 
     // Indicadores de estado sobre la mascota
     const x = 350;
@@ -1982,6 +1991,27 @@ export class GameUI {
   private launchMinigame(minigameId: string, personality: string): void {
     if (minigameId === 'theButton') {
       this.activeMinigame = new TheButtonUI(this.canvas, this.pet);
+      this.activeMinigame.setPetSprite(this.getSpriteForPet());
+      this.activeMinigame.onGameEnd = (scorePercentage) => {
+        this.handleMinigameEnd(scorePercentage, personality);
+      };
+      this.minigameRewards = new TheButtonRewards(this.canvas, this.ingredientCache);
+    } else if (minigameId === 'edgyBunBun') {
+      this.activeMinigame = new EdgyBunBunUI(this.canvas, this.pet);
+      this.activeMinigame.setPetSprite(this.getSpriteForPet());
+      this.activeMinigame.onGameEnd = (scorePercentage) => {
+        this.handleMinigameEnd(scorePercentage, personality);
+      };
+      this.minigameRewards = new TheButtonRewards(this.canvas, this.ingredientCache);
+    } else if (minigameId === 'higherOrLower') {
+      this.activeMinigame = new GuessTheHigherUI(this.canvas, this.pet);
+      this.activeMinigame.setPetSprite(this.getSpriteForPet());
+      this.activeMinigame.onGameEnd = (scorePercentage) => {
+        this.handleMinigameEnd(scorePercentage, personality);
+      };
+      this.minigameRewards = new TheButtonRewards(this.canvas, this.ingredientCache);
+    } else if (minigameId === 'simonDice') {
+      this.activeMinigame = new SimonDiceUI(this.canvas, this.pet);
       this.activeMinigame.setPetSprite(this.getSpriteForPet());
       this.activeMinigame.onGameEnd = (scorePercentage) => {
         this.handleMinigameEnd(scorePercentage, personality);

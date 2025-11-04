@@ -189,16 +189,24 @@ export class Pet {
 
   // Alimentar con ingrediente
   feedWithIngredient(ingredient: Ingredient): { success: boolean; reason?: string } {
+    // No se puede alimentar a un huevo
+    if (this.stage === LifeStage.Egg) {
+      console.log('[Pet] Cannot feed an egg!');
+      return { success: false, reason: 'is_egg' };
+    }
+
     // Verificar si la mascota está llena (3 estrellas)
     if (this.hunger.isFullySatiated()) {
       console.log('[Pet] Already full, refusing food!');
       return { success: false, reason: 'full' };
     }
 
-    // Consumir ingrediente del inventario
-    if (!this.inventory.consume(ingredient.identifier)) {
-      console.log('[Pet] No ingredient available!');
-      return { success: false, reason: 'no_ingredient' };
+    // Consumir ingrediente del inventario (excepto neutral, que siempre está disponible)
+    if (ingredient.personality !== 'neutral') {
+      if (!this.inventory.consume(ingredient.identifier)) {
+        console.log('[Pet] No ingredient available!');
+        return { success: false, reason: 'no_ingredient' };
+      }
     }
 
     // Verificar si necesita generar recuerdo ANTES de saciar
@@ -235,6 +243,12 @@ export class Pet {
 
   // Jugar minijuego (reduce aburrimiento y da ingrediente como recompensa)
   play(personalityType: string, scorePercentage: number = 0): Ingredient[] {
+    // No se puede jugar con un huevo
+    if (this.stage === LifeStage.Egg) {
+      console.log('[Pet] Cannot play with an egg!');
+      return [];
+    }
+
     // Verificar si necesita generar recuerdo ANTES de entretener
     const wasNotFullyEntertained = !this.boring.isFullyEntertained();
 
@@ -357,10 +371,7 @@ export class Pet {
       this.hunger.onStageChange(this.stage);
       this.boring.onStageChange(this.stage);
 
-      // Baby nace con 3 estrellas completas (ya vienen con 3 por defecto)
-      // Se sacia/entretiene 1 para mantener compatibilidad pero ya está en 3
-      this.hunger.satiate(1);
-      this.boring.entertain();
+      // Baby nace con 1 estrella de hambre y 1 de diversión
 
       if (this.onEvolve) {
         this.onEvolve(this.stage);
