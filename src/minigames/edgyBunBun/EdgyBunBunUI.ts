@@ -98,9 +98,13 @@ export class EdgyBunBunUI {
 
       if (x >= buttonX && x <= buttonX + buttonW &&
           y >= buttonY && y <= buttonY + buttonH) {
+        e.stopPropagation(); // Prevenir propagación al GameUI
         this.game.start();
       }
     } else if (state.state === 'playing') {
+      // Prevenir propagación durante el juego
+      e.stopPropagation();
+
       // Click en mitades de pantalla para saltar
       const side: Side = x < this.canvas.width / 2 ? 'left' : 'right';
       this.jump(side);
@@ -115,6 +119,7 @@ export class EdgyBunBunUI {
 
       if (x >= buttonX && x <= buttonX + buttonW &&
           y >= buttonY && y <= buttonY + buttonH) {
+        e.stopPropagation(); // CRÍTICO: Prevenir propagación al GameUI
         this.handleGameEnd();
       }
     }

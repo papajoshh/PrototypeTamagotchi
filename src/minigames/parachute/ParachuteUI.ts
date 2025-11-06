@@ -94,7 +94,7 @@ export class ParachuteUI {
       const rect = this.canvas.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
-      this.handleMouseDown(x, y);
+      this.handleMouseDown(x, y, e);
     });
 
     this.canvas.addEventListener('mousemove', (e) => {
@@ -139,7 +139,7 @@ export class ParachuteUI {
     window.addEventListener('keyup', (e) => this.handleKeyUp(e));
   }
 
-  private handleMouseDown(x: number, y: number): void {
+  private handleMouseDown(x: number, y: number, e?: MouseEvent): void {
     const state = this.game.getState();
 
     if (state.state === 'waiting') {
@@ -151,12 +151,18 @@ export class ParachuteUI {
 
       if (x >= buttonX && x <= buttonX + buttonW &&
           y >= buttonY && y <= buttonY + buttonH) {
+        if (e) e.stopPropagation(); // Prevenir propagación al GameUI
         this.game.start();
       }
     } else if (state.state === 'playing') {
+      // Prevenir propagación durante el juego
+      if (e) e.stopPropagation();
+
       this.isDragging = true;
       this.lastMouseX = x;
     } else if (state.state === 'finished') {
+      // CRÍTICO: Prevenir propagación al GameUI
+      if (e) e.stopPropagation();
       this.handleGameEnd();
     }
   }

@@ -84,6 +84,12 @@ export class MochiCookingUI {
     this.canvas.addEventListener('mouseup', (e) => this.handleMouseUp(e));
     this.canvas.addEventListener('mouseleave', (e) => this.handleMouseUp(e));
 
+    // CRÍTICO: También capturar evento 'click' para prevenir propagación al GameUI
+    this.canvas.addEventListener('click', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+    });
+
     this.canvas.addEventListener('touchstart', (e) => this.handleTouchStart(e));
     this.canvas.addEventListener('touchmove', (e) => this.handleTouchMove(e));
     this.canvas.addEventListener('touchend', (e) => this.handleTouchEnd(e));
@@ -97,6 +103,9 @@ export class MochiCookingUI {
     const state = this.game.getState();
 
     if (state.state === 'waiting') {
+      // SIEMPRE prevenir propagación en pantalla de espera
+      e.stopPropagation();
+
       // Check if clicked start button
       const buttonX = this.canvas.width / 2 - 100;
       const buttonY = 400;
@@ -111,6 +120,9 @@ export class MochiCookingUI {
         this.game.start();
       }
     } else if (state.state === 'playing') {
+      // Prevenir propagación durante el juego
+      e.stopPropagation();
+
       if (state.roundStep === 'tap2_drag') {
         this.isDragging = true;
         this.dragStartX = x;
@@ -123,8 +135,22 @@ export class MochiCookingUI {
         this.game.handleTap(x, y);
       }
     } else if (state.state === 'finished') {
-      // End game
-      this.handleGameEnd(state);
+      // SIEMPRE prevenir propagación en pantalla final
+      e.stopPropagation();
+
+      // Click en el botón "Ver Recompensas" para cerrar
+      const buttonX = this.canvas.width / 2 - 120;
+      const buttonY = 550;
+      const buttonW = 240;
+      const buttonH = 60;
+
+      const absX = x * this.canvas.width;
+      const absY = y * this.canvas.height;
+
+      if (absX >= buttonX && absX <= buttonX + buttonW &&
+          absY >= buttonY && absY <= buttonY + buttonH) {
+        this.handleGameEnd(state);
+      }
     }
   }
 
@@ -194,11 +220,7 @@ export class MochiCookingUI {
 
   update(deltaTime: number): void {
     this.game.update(deltaTime);
-
-    const state = this.game.getState();
-    if (state.state === 'finished' && !this.hasCalledOnGameEnd) {
-      this.handleGameEnd(state);
-    }
+    // No llamar handleGameEnd automáticamente - esperar click del usuario
   }
 
   render(): void {
@@ -272,8 +294,8 @@ export class MochiCookingUI {
     // Render hammer (siempre visible)
     this.renderHammer(state);
 
-    // Render timing circles (encima del martillo)
-    if (state.roundStep === 'tap1' || state.roundStep === 'tap2_drag') {
+    // Render timing circles (encima del martillo) - SIEMPRE mostrar mientras haya círculos
+    if (state.roundStep === 'tap1' || state.roundStep === 'cooldown' || state.roundStep === 'tap2_drag') {
       this.renderTimingCircles(state);
     }
 
@@ -287,7 +309,7 @@ export class MochiCookingUI {
 
   private renderPet(): void {
     const petX = 100;
-    const petY = this.canvas.height / 2;
+    const petY = this.canvas.height / 2 - 50; // Subir 50px para no chocar con círculos
 
     if (this.petSprite && this.petSprite.complete && this.petSprite.naturalWidth > 0) {
       const maxSize = 120;
@@ -352,7 +374,7 @@ export class MochiCookingUI {
     // Render circumference
     if (this.circumferenceSprite && this.circumferenceSprite.complete && this.circumferenceSprite.naturalWidth > 0) {
       const circSize = 300;
-      this.ctx.globalAlpha = 0.3;
+      this.ctx.globalAlpha = 0.4;
       this.ctx.drawImage(
         this.circumferenceSprite,
         mochiX - circSize / 2,
@@ -396,80 +418,200 @@ export class MochiCookingUI {
     const mochiY = 400; // Centrado más arriba para accesibilidad
     const radius = 150; // Radio de la circunferencia
 
-    if (state.roundStep === 'tap1' && state.currentTarget) {
-      const target = state.currentTarget;
-      const targetX = mochiX + Math.cos(target.angle) * radius;
-      const targetY = mochiY + Math.sin(target.angle) * radius;
+    // MOSTRAR TODOS LOS CÍRCULOS DEL CAMINO (preview) - AL FINAL para que estén encima
+    // Se renderiza después de todo lo demás
 
-      this.renderCircle(targetX, targetY, state.circleProgress);
-    } else if (state.roundStep === 'tap2_drag' && state.currentSwipe) {
+    // Render CÁPSULA si existe currentSwipe (desde tap1 ya se muestra el camino)
+    if (state.currentSwipe) {
       const swipe = state.currentSwipe;
       const startX = mochiX + Math.cos(swipe.startCircle.angle) * radius;
       const startY = mochiY + Math.sin(swipe.startCircle.angle) * radius;
       const endX = mochiX + Math.cos(swipe.endCircle.angle) * radius;
       const endY = mochiY + Math.sin(swipe.endCircle.angle) * radius;
 
-      // Render path line
-      this.ctx.strokeStyle = 'rgba(0, 0, 0, 0.2)';
-      this.ctx.lineWidth = 3;
-      this.ctx.setLineDash([10, 5]);
+      // Render CÁPSULA mostrando el camino del drag (desde startCircle hasta endCircle)
+      const capsuleWidth = 60; // Ancho de la cápsula
+      const dx = endX - startX;
+      const dy = endY - startY;
+      const length = Math.sqrt(dx * dx + dy * dy);
+      const angle = Math.atan2(dy, dx);
+
+      this.ctx.save();
+      this.ctx.translate(startX, startY);
+      this.ctx.rotate(angle);
+
+      // Dibujar cápsula BLANCO Y NEGRO con patrón de líneas
+      this.ctx.fillStyle = 'rgba(0, 0, 0, 0.15)'; // Gris claro
+      this.ctx.strokeStyle = '#000'; // Borde negro
+      this.ctx.lineWidth = 4;
+
+      // Rectángulo central
+      this.ctx.fillRect(0, -capsuleWidth / 2, length, capsuleWidth);
+      this.ctx.strokeRect(0, -capsuleWidth / 2, length, capsuleWidth);
+
+      // Círculo inicio (izquierda)
       this.ctx.beginPath();
-      this.ctx.moveTo(startX, startY);
-      this.ctx.lineTo(mochiX, mochiY);
-      this.ctx.lineTo(endX, endY);
-      this.ctx.stroke();
-      this.ctx.setLineDash([]);
-
-      // Render arrow at start
-      this.renderArrow(startX, startY, swipe.direction);
-
-      // Calcular posición actual del círculo (interpolación basada en swipeMoveProgress)
-      const progress = state.swipeMoveProgress;
-      const currentCircleX = startX + (endX - startX) * progress;
-      const currentCircleY = startY + (endY - startY) * progress;
-
-      // Render circle en su posición actual (se mueve automáticamente)
-      this.renderCircle(currentCircleX, currentCircleY, state.circleProgress);
-
-      // Render end marker
-      this.ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
-      this.ctx.beginPath();
-      this.ctx.arc(endX, endY, 20, 0, Math.PI * 2);
+      this.ctx.arc(0, 0, capsuleWidth / 2, 0, Math.PI * 2);
       this.ctx.fill();
+      this.ctx.stroke();
 
-      // Render drag trail if dragging
-      if (this.isDragging) {
-        const currentX = this.dragCurrentX * this.canvas.width;
-        const currentY = this.dragCurrentY * this.canvas.height;
+      // Círculo fin (derecha)
+      this.ctx.beginPath();
+      this.ctx.arc(length, 0, capsuleWidth / 2, 0, Math.PI * 2);
+      this.ctx.fill();
+      this.ctx.stroke();
 
-        // Draw trail line from start to current position
-        this.ctx.strokeStyle = '#FFD700'; // Golden color
-        this.ctx.lineWidth = 6;
-        this.ctx.lineCap = 'round';
+      // Líneas diagonales para patrón
+      this.ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+      this.ctx.lineWidth = 2;
+      for (let i = 0; i < length; i += 15) {
         this.ctx.beginPath();
-        this.ctx.moveTo(startX, startY);
-        this.ctx.lineTo(currentX, currentY);
+        this.ctx.moveTo(i, -capsuleWidth / 2);
+        this.ctx.lineTo(i + 15, capsuleWidth / 2);
         this.ctx.stroke();
+      }
 
-        // Draw circle following the finger
-        this.ctx.fillStyle = '#FFD700';
+      this.ctx.restore();
+
+      // Render circle según el estado
+      if (state.roundStep === 'tap2_drag') {
+        // FASE TAP2: Calcular posición actual del círculo (interpolación basada en swipeMoveProgress)
+        const progress = state.swipeMoveProgress;
+        const currentCircleX = startX + (endX - startX) * progress;
+        const currentCircleY = startY + (endY - startY) * progress;
+
+        // Calcular progreso CORRECTO basado en roundStartTime (no stepStartTime)
+        // Para que el círculo NO crezca al cambiar de tap1 a tap2_drag
+        const tap1Duration = this.game.getCircleDuration();
+        const cooldownDuration = this.game.getCooldownDuration();
+        const totalTimeUntilTap2 = tap1Duration + cooldownDuration;
+        const elapsedSinceRoundStart = Date.now() - this.game.getRoundStartTime();
+        const tap2Progress = Math.max(0, Math.min(1, elapsedSinceRoundStart / totalTimeUntilTap2));
+
+        // Render circle con progreso correcto y duración TOTAL (igual que en preview)
+        this.renderCircle(currentCircleX, currentCircleY, tap2Progress, totalTimeUntilTap2);
+
+        // Render end marker
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
         this.ctx.beginPath();
-        this.ctx.arc(currentX, currentY, 12, 0, Math.PI * 2);
+        this.ctx.arc(endX, endY, 20, 0, Math.PI * 2);
         this.ctx.fill();
 
-        // Border for the following circle (negro para que se vea)
+        // Render drag trail if dragging (BLANCO Y NEGRO)
+        if (this.isDragging) {
+          const currentX = this.dragCurrentX * this.canvas.width;
+          const currentY = this.dragCurrentY * this.canvas.height;
+
+          // Draw trail line from start to current position (NEGRO con borde blanco)
+          this.ctx.strokeStyle = '#fff';
+          this.ctx.lineWidth = 10;
+          this.ctx.lineCap = 'round';
+          this.ctx.beginPath();
+          this.ctx.moveTo(startX, startY);
+          this.ctx.lineTo(currentX, currentY);
+          this.ctx.stroke();
+
+          this.ctx.strokeStyle = '#000';
+          this.ctx.lineWidth = 6;
+          this.ctx.lineCap = 'round';
+          this.ctx.beginPath();
+          this.ctx.moveTo(startX, startY);
+          this.ctx.lineTo(currentX, currentY);
+          this.ctx.stroke();
+
+          // Draw circle following the finger (BLANCO con borde negro)
+          this.ctx.fillStyle = '#fff';
+          this.ctx.beginPath();
+          this.ctx.arc(currentX, currentY, 16, 0, Math.PI * 2);
+          this.ctx.fill();
+
+          this.ctx.strokeStyle = '#000';
+          this.ctx.lineWidth = 4;
+          this.ctx.beginPath();
+          this.ctx.arc(currentX, currentY, 16, 0, Math.PI * 2);
+          this.ctx.stroke();
+        }
+      }
+    }
+
+    // Render tap1 circle si estamos en esa fase
+    if (state.roundStep === 'tap1' && state.currentTarget) {
+      const target = state.currentTarget;
+      const targetX = mochiX + Math.cos(target.angle) * radius;
+      const targetY = mochiY + Math.sin(target.angle) * radius;
+
+      const tap1Duration = this.game.getCircleDuration();
+      this.renderCircle(targetX, targetY, state.circleProgress, tap1Duration);
+    }
+
+    // Render tap2 circle TAMBIÉN durante tap1 y cooldown (preview de cuándo hay que tapear)
+    if ((state.roundStep === 'tap1' || state.roundStep === 'cooldown') && state.currentSwipe) {
+      const tap2Start = state.currentSwipe.startCircle;
+      const tap2X = mochiX + Math.cos(tap2Start.angle) * radius;
+      const tap2Y = mochiY + Math.sin(tap2Start.angle) * radius;
+
+      const tap1Duration = this.game.getCircleDuration();
+      const cooldownDuration = this.game.getCooldownDuration();
+      const totalTimeUntilTap2 = tap1Duration + cooldownDuration;
+
+      // Tiempo transcurrido desde el inicio de la ronda
+      const elapsedSinceRoundStart = Date.now() - this.game.getRoundStartTime();
+
+      // Progreso de tap2: mismo cálculo de progreso pero con tiempo total
+      const tap2Progress = Math.max(0, Math.min(1, elapsedSinceRoundStart / totalTimeUntilTap2));
+
+      // Renderizar tap2 circle con duración TOTAL (tap1 + cooldown)
+      // El círculo será MÁS GRANDE porque tiene más tiempo
+      this.renderCircle(tap2X, tap2Y, tap2Progress, totalTimeUntilTap2);
+    }
+
+    // RENDERIZAR CÍRCULOS DE PREVIEW AL FINAL (para que estén encima de todo)
+    // Tamaños diferentes: tap1 (pequeño) -> tap2_start (mediano) -> tap2_end (grande)
+    if (state.allCircles && state.allCircles.length > 0) {
+      state.allCircles.forEach((circle, index) => {
+        const circleX = mochiX + Math.cos(circle.angle) * radius;
+        const circleY = mochiY + Math.sin(circle.angle) * radius;
+
+        // Tamaños progresivos: más tarde ocurre = más grande
+        const baseRadius = 20 + (index * 8); // 20, 28, 36
+        const borderRadius = baseRadius + 3;
+
+        // Borde blanco grueso para destacar sobre fondo
+        this.ctx.strokeStyle = '#fff';
+        this.ctx.lineWidth = 6;
+        this.ctx.beginPath();
+        this.ctx.arc(circleX, circleY, borderRadius, 0, Math.PI * 2);
+        this.ctx.stroke();
+
+        // Círculo de preview NEGRO con borde
+        this.ctx.fillStyle = '#000';
         this.ctx.strokeStyle = '#000';
         this.ctx.lineWidth = 3;
         this.ctx.beginPath();
-        this.ctx.arc(currentX, currentY, 12, 0, Math.PI * 2);
+        this.ctx.arc(circleX, circleY, baseRadius, 0, Math.PI * 2);
+        this.ctx.fill();
         this.ctx.stroke();
-      }
+
+        // Número del paso en BLANCO
+        this.ctx.fillStyle = '#fff';
+        this.ctx.font = `bold ${14 + index * 2}px Arial`; // 14, 16, 18
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText(`${index + 1}`, circleX, circleY);
+      });
     }
   }
 
-  private renderCircle(x: number, y: number, progress: number): void {
-    const outerRadius = 40;
-    const innerRadius = 15;
+  private renderCircle(x: number, y: number, progress: number, durationMs: number = 1200): void {
+    // VELOCIDAD CONSTANTE: radio se reduce a velocidad constante
+    // Si dura más tiempo, el círculo inicial debe ser MÁS GRANDE
+    const baseOuterRadius = 60; // Radio base para 1.2s
+    const baseInnerRadius = 25;
+
+    // Escalar el radio según la duración (más tiempo = más grande)
+    const durationScale = durationMs / 1200; // 1200ms es la duración base
+    const outerRadius = baseOuterRadius * durationScale;
+    const innerRadius = baseInnerRadius;
 
     // Outer circle (shrinking) - usar siempre dibujado programático para mejor control
     const currentRadius = outerRadius - (outerRadius - innerRadius) * progress;
@@ -480,13 +622,13 @@ export class MochiCookingUI {
     this.ctx.arc(x, y, currentRadius, 0, Math.PI * 2);
     this.ctx.stroke();
 
-    // Inner circle (fixed target)
-    this.ctx.fillStyle = '#FFD700';
+    // Inner circle (fixed target) - BLANCO Y NEGRO
+    this.ctx.fillStyle = '#fff'; // BLANCO
     this.ctx.beginPath();
     this.ctx.arc(x, y, innerRadius, 0, Math.PI * 2);
     this.ctx.fill();
     this.ctx.strokeStyle = '#000';
-    this.ctx.lineWidth = 2;
+    this.ctx.lineWidth = 3;
     this.ctx.stroke();
   }
 
@@ -726,9 +868,24 @@ export class MochiCookingUI {
       this.ctx.font = 'bold 24px Arial';
       this.ctx.fillText('El ingrediente se perdió...', centerX, centerY + 150);
 
-      // Botón continuar
-      this.ctx.font = '20px Arial';
-      this.ctx.fillText('Toca para continuar', centerX, centerY + 220);
+      // Botón "Ver Recompensas" (bueno, en este caso no hay recompensas pero mantener consistencia)
+      const buttonX = this.canvas.width / 2 - 120;
+      const buttonY = 550;
+      const buttonW = 240;
+      const buttonH = 60;
+
+      this.ctx.fillStyle = '#000';
+      this.ctx.fillRect(buttonX, buttonY, buttonW, buttonH);
+
+      this.ctx.strokeStyle = '#fff';
+      this.ctx.lineWidth = 4;
+      this.ctx.strokeRect(buttonX, buttonY, buttonW, buttonH);
+
+      this.ctx.fillStyle = '#fff';
+      this.ctx.font = 'bold 24px Arial';
+      this.ctx.textAlign = 'center';
+      this.ctx.textBaseline = 'middle';
+      this.ctx.fillText('Continuar', buttonX + buttonW / 2, buttonY + buttonH / 2);
     }
   }
 
@@ -765,9 +922,24 @@ export class MochiCookingUI {
     this.ctx.font = '20px Arial';
     this.ctx.fillText(`Recuerdo generado: Comida ${ingredientName}`, centerX, 490);
 
-    // Botón continuar
-    this.ctx.font = '20px Arial';
-    this.ctx.fillText('Toca para continuar', centerX, 570);
+    // Botón "Ver Recompensas"
+    const buttonX = this.canvas.width / 2 - 120;
+    const buttonY = 550;
+    const buttonW = 240;
+    const buttonH = 60;
+
+    this.ctx.fillStyle = '#000';
+    this.ctx.fillRect(buttonX, buttonY, buttonW, buttonH);
+
+    this.ctx.strokeStyle = '#fff';
+    this.ctx.lineWidth = 4;
+    this.ctx.strokeRect(buttonX, buttonY, buttonW, buttonH);
+
+    this.ctx.fillStyle = '#fff';
+    this.ctx.font = 'bold 24px Arial';
+    this.ctx.textAlign = 'center';
+    this.ctx.textBaseline = 'middle';
+    this.ctx.fillText('Ver Recompensas', buttonX + buttonW / 2, buttonY + buttonH / 2);
   }
 
   private getIngredientDisplayName(): string {

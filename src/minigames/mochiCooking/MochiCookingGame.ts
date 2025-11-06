@@ -48,6 +48,9 @@ export interface MochiCookingGameState {
   // Swipe tracking
   swipeMoveProgress: number; // 0-1, progreso del movimiento automático del círculo
   isFollowing: boolean; // Si el jugador está siguiendo el círculo actualmente
+
+  // All circles path (para mostrar el camino completo)
+  allCircles: CircleTarget[];
 }
 
 export class MochiCookingGame {
@@ -60,7 +63,11 @@ export class MochiCookingGame {
   private currentTarget: CircleTarget | null = null;
   private currentSwipe: SwipeTarget | null = null;
 
+  // Todos los círculos de la ronda completa (para mostrar el camino)
+  private allCircles: CircleTarget[] = [];
+
   private stepStartTime: number = 0;
+  private roundStartTime: number = 0; // Tiempo de inicio de toda la ronda (tap1 start)
   private circleProgress: number = 0;
 
   private roundsCompleted: number = 0;
@@ -79,16 +86,17 @@ export class MochiCookingGame {
   private swipeMoveProgress: number = 0; // 0-1, progreso del movimiento del círculo
   private isFollowing: boolean = false; // Si el jugador está siguiendo
 
-  // Configuración por tier
-  private readonly CIRCLE_DURATION_BY_TIER = [2000, 1500, 1000]; // 2s, 1.5s, 1s
-  private readonly COOLDOWN_BY_TIER = [1000, 500, 250]; // ms
+  // Configuración por tier - NUEVO BALANCE (más fácil)
+  private readonly CIRCLE_DURATION_BY_TIER = [1600, 1200, 900]; // 1.6s, 1.2s, 0.9s (tap timing - MÁS LENTO)
+  private readonly COOLDOWN_BY_TIER = [600, 500, 400]; // 0.6s, 0.5s, 0.4s entre tap1 y tap2
   private readonly PENALTY_BY_TIER = [10, 30, 50];
-  private readonly MAX_SCORE_BY_TIER = [330, 430, 510];
+  private readonly MAX_SCORE_BY_TIER = [250, 320, 390]; // Reducido ~24% para hacer más alcanzable
   private readonly REWARD_PER_STEP = 10;
   private readonly STUN_DURATION = 1000; // 1s
   private readonly FEEDBACK_DURATION = 500; // 0.5s
-  private readonly SWIPE_MOVE_DURATION_BY_TIER = [2000, 1500, 1000]; // Duración del movimiento del círculo
-  private readonly FOLLOW_TOLERANCE = 0.15; // Distancia máxima del dedo al círculo
+  private readonly SWIPE_MOVE_DURATION_BY_TIER = [300, 250, 200]; // 0.3s, 0.25s, 0.2s (drag duration - MÁS RÁPIDO)
+  private readonly FOLLOW_TOLERANCE_BY_TIER = [0.20, 0.17, 0.15]; // 20%, 17%, 15% (más permisivo en tier bajo)
+  private readonly CHANNEL_WIDTH_BY_TIER = [0.12, 0.10, 0.08]; // 12%, 10%, 8% (más permisivo en tier bajo)
 
   // Geometría (normalizado 0-1, basado en canvas 480x640)
   private readonly MOCHI_RADIUS = 0.3; // Radio de la circunferencia normalizado
@@ -216,11 +224,24 @@ export class MochiCookingGame {
     this.isFollowing = false;
 
     if (step === 'tap1') {
+      // Guardar tiempo de inicio de la ronda completa
+      this.roundStartTime = Date.now();
+
+      // Generar ronda completa (tap1 + tap2_drag) con separación mínima
       this.currentTarget = this.generateRandomCircleTarget();
-      this.currentSwipe = null;
+      this.currentSwipe = this.generateSwipeTargetWithMinDistance(this.currentTarget);
+
+      // Guardar todos los círculos para mostrarlos
+      this.allCircles = [
+        this.currentTarget,
+        this.currentSwipe.startCircle,
+        this.currentSwipe.endCircle
+      ];
+
+      console.log('[Generation] tap1:', this.currentTarget.angle, 'tap2_start:', this.currentSwipe.startCircle.angle, 'tap2_end:', this.currentSwipe.endCircle.angle);
     } else if (step === 'tap2_drag') {
-      this.currentSwipe = this.generateSwipeTarget();
-      this.currentTarget = this.currentSwipe.startCircle;
+      this.currentTarget = this.currentSwipe!.startCircle;
+      // allCircles ya está seteado desde tap1
     }
   }
 
@@ -233,30 +254,47 @@ export class MochiCookingGame {
     };
   }
 
-  private generateSwipeTarget(): SwipeTarget {
+  private generateSwipeTargetWithMinDistance(tap1Circle: CircleTarget): SwipeTarget {
+    const MIN_ANGULAR_DISTANCE = Math.PI / 3; // 60 grados mínimo de separación (1.047 rad ≈ 60°)
     const directions: SwipeDirection[] = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
     const direction = directions[Math.floor(Math.random() * directions.length)];
 
-    const startAngle = Math.random() * Math.PI * 2;
+    let startAngle: number;
+    let endAngle: number;
+    let attempts = 0;
+    const maxAttempts = 50;
+
+    // Generar startCircle y endCircle que estén alejados de tap1 Y entre sí
+    do {
+      startAngle = Math.random() * Math.PI * 2;
+      endAngle = startAngle + Math.PI; // Lado opuesto
+
+      // Validar que startCircle está alejado de tap1
+      const startToTap1 = this.getAngularDifference(startAngle, tap1Circle.angle);
+      // Validar que endCircle está alejado de tap1
+      const endToTap1 = this.getAngularDifference(endAngle, tap1Circle.angle);
+
+      // TODOS deben estar separados mínimo 60°
+      if (startToTap1 >= MIN_ANGULAR_DISTANCE && endToTap1 >= MIN_ANGULAR_DISTANCE) {
+        console.log(`[Generation] Valid config found after ${attempts + 1} attempts`);
+        console.log(`  tap1: ${(tap1Circle.angle * 180 / Math.PI).toFixed(1)}°`);
+        console.log(`  tap2_start: ${(startAngle * 180 / Math.PI).toFixed(1)}° (dist: ${(startToTap1 * 180 / Math.PI).toFixed(1)}°)`);
+        console.log(`  tap2_end: ${(endAngle * 180 / Math.PI).toFixed(1)}° (dist: ${(endToTap1 * 180 / Math.PI).toFixed(1)}°)`);
+        break;
+      }
+      attempts++;
+    } while (attempts < maxAttempts);
+
+    if (attempts >= maxAttempts) {
+      console.warn('[Generation] Could not find perfectly separated circles, using last attempt');
+    }
+
     const startCircle: CircleTarget = {
       angle: startAngle,
       x: this.MOCHI_CENTER_X + Math.cos(startAngle) * this.MOCHI_RADIUS,
       y: this.MOCHI_CENTER_Y + Math.sin(startAngle) * this.MOCHI_RADIUS
     };
 
-    // Calcular ángulo final basado en dirección
-    const directionAngles: Record<SwipeDirection, number> = {
-      'N': -Math.PI / 2,
-      'NE': -Math.PI / 4,
-      'E': 0,
-      'SE': Math.PI / 4,
-      'S': Math.PI / 2,
-      'SW': 3 * Math.PI / 4,
-      'W': Math.PI,
-      'NW': -3 * Math.PI / 4
-    };
-
-    const endAngle = startAngle + Math.PI; // Lado opuesto
     const endCircle: CircleTarget = {
       angle: endAngle,
       x: this.MOCHI_CENTER_X + Math.cos(endAngle) * this.MOCHI_RADIUS,
@@ -268,6 +306,16 @@ export class MochiCookingGame {
       direction,
       endCircle
     };
+  }
+
+  // Calcula la diferencia angular más corta entre dos ángulos (0 a π)
+  private getAngularDifference(angle1: number, angle2: number): number {
+    let diff = Math.abs(angle1 - angle2);
+    // Normalizar a rango [0, 2π]
+    while (diff > Math.PI * 2) diff -= Math.PI * 2;
+    // Tomar el camino más corto
+    if (diff > Math.PI) diff = Math.PI * 2 - diff;
+    return diff;
   }
 
   handleTap(x: number, y: number): void {
@@ -358,12 +406,68 @@ export class MochiCookingGame {
 
       console.log(`[Follow] Finger: (${fingerX.toFixed(2)}, ${fingerY.toFixed(2)}), Circle: (${currentCirclePos.x.toFixed(2)}, ${currentCirclePos.y.toFixed(2)}), Distance: ${distance.toFixed(3)}`);
 
-      if (distance > this.FOLLOW_TOLERANCE) {
-        // Se alejó demasiado del círculo
-        console.log('[Follow] FAIL: Lost track of circle');
+      // Obtener tolerancias según tier
+      const followTolerance = this.FOLLOW_TOLERANCE_BY_TIER[this.tier - 1];
+      const channelWidth = this.CHANNEL_WIDTH_BY_TIER[this.tier - 1];
+
+      // Validar que sigue el círculo (permisivo según tier)
+      if (distance > followTolerance) {
+        console.log(`[Follow] FAIL: Lost track of circle (distance: ${distance.toFixed(3)}, max: ${followTolerance})`);
+        this.handleMiss();
+        return;
+      }
+
+      // Validar que NO se sale del canal (estricto según tier)
+      const channelDistance = this.getPerpendicularDistanceToChannel(fingerX, fingerY);
+      console.log(`[Channel] Perpendicular distance: ${channelDistance.toFixed(3)} (max: ${channelWidth})`);
+
+      if (channelDistance > channelWidth) {
+        console.log('[Channel] FAIL: Out of channel');
         this.handleMiss();
       }
     }
+  }
+
+  // Calcula la distancia perpendicular del punto al canal (línea recta entre start y end)
+  private getPerpendicularDistanceToChannel(fingerX: number, fingerY: number): number {
+    if (!this.currentSwipe) {
+      return 0;
+    }
+
+    const start = this.currentSwipe.startCircle;
+    const end = this.currentSwipe.endCircle;
+
+    // Vector del canal (start -> end)
+    const channelDx = end.x - start.x;
+    const channelDy = end.y - start.y;
+    const channelLength = Math.sqrt(channelDx * channelDx + channelDy * channelDy);
+
+    if (channelLength === 0) {
+      return 0; // Canal de longitud 0
+    }
+
+    // Vector normalizado del canal
+    const channelNormX = channelDx / channelLength;
+    const channelNormY = channelDy / channelLength;
+
+    // Vector desde start hasta el dedo
+    const fingerDx = fingerX - start.x;
+    const fingerDy = fingerY - start.y;
+
+    // Proyección del dedo sobre el canal (producto punto)
+    const projection = fingerDx * channelNormX + fingerDy * channelNormY;
+
+    // Punto más cercano en el canal
+    const closestX = start.x + channelNormX * projection;
+    const closestY = start.y + channelNormY * projection;
+
+    // Distancia perpendicular (del dedo al punto más cercano)
+    const perpDistance = Math.sqrt(
+      Math.pow(fingerX - closestX, 2) +
+      Math.pow(fingerY - closestY, 2)
+    );
+
+    return perpDistance;
   }
 
   // Calcula la posición actual del círculo basado en el progreso del movimiento
@@ -437,6 +541,19 @@ export class MochiCookingGame {
     this.stepStartTime = Date.now();
   }
 
+  // Getters para UI
+  getCircleDuration(): number {
+    return this.CIRCLE_DURATION_BY_TIER[this.tier - 1];
+  }
+
+  getCooldownDuration(): number {
+    return this.COOLDOWN_BY_TIER[this.tier - 1];
+  }
+
+  getRoundStartTime(): number {
+    return this.roundStartTime;
+  }
+
   getState(): MochiCookingGameState {
     return {
       state: this.state,
@@ -458,7 +575,8 @@ export class MochiCookingGame {
       hammerAnimating: this.hammerAnimating,
       hammerHitProgress: this.hammerHitProgress,
       swipeMoveProgress: this.swipeMoveProgress,
-      isFollowing: this.isFollowing
+      isFollowing: this.isFollowing,
+      allCircles: this.allCircles
     };
   }
 

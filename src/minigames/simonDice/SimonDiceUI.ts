@@ -125,14 +125,17 @@ export class SimonDiceUI {
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
 
-      this.handleClick(x, y);
+      this.handleClick(x, y, e);
     });
   }
 
-  private handleClick(x: number, y: number): void {
+  private handleClick(x: number, y: number, e?: MouseEvent): void {
     const state = this.game.getState();
 
     if (state.state === 'waitingForInput') {
+      // Prevenir propagación durante el juego
+      if (e) e.stopPropagation();
+
       // Check which button was clicked
       const buttonY = 480;
       const buttonHeight = 100;
@@ -174,6 +177,8 @@ export class SimonDiceUI {
         }
       }
     } else if (state.state === 'finished') {
+      // CRÍTICO: Prevenir propagación al GameUI
+      if (e) e.stopPropagation();
       this.handleGameEnd();
     }
   }

@@ -7,6 +7,7 @@ import { MemorySystem } from './MemorySystem';
 import { IngredientInventory } from './IngredientInventory';
 import { Ingredient } from './Ingredient';
 import { LifeStage, GROWTH_THRESHOLDS } from './LifeStage';
+import { EvolutionTree } from './EvolutionTree';
 
 export { LifeStage };
 
@@ -111,35 +112,44 @@ export class Pet {
     if (this.stage >= LifeStage.ReadyToAscend) return;
 
     const oldStage = this.stage;
+    const oldPersonality = this.personality?.name || null;
 
     // Avanzar etapa
     this.stage++;
     this.growthPoints = 0;
 
-    // Verificar evolución a descuidado (solo Baby→Child)
-    if (oldStage === LifeStage.Baby && this.wasNeglected) {
-      this.personality = new Personality('descuidado');
-      console.log(`[Pet] Evolved to ${LifeStage[this.stage]} as DESCUIDADO (neglected care)`);
-    }
-    // Si ya es descuidado, mantener la línea descuidado
-    else if (this.personality && this.personality.name.includes('descuidado')) {
-      const dominantMemory = this.memorySystem.selectDominantMemory();
-      if (dominantMemory) {
-        this.personality = new Personality(`descuidado+${dominantMemory}`);
+    // Seleccionar recuerdo dominante
+    const dominantMemory = this.memorySystem.selectDominantMemory();
+
+    // Usar EvolutionTree para determinar nueva personalidad
+    const newPersonalityName = EvolutionTree.getNextPersonality(
+      oldStage,
+      oldPersonality,
+      dominantMemory,
+      this.wasNeglected
+    );
+
+    if (newPersonalityName) {
+      this.personality = new Personality(newPersonalityName);
+
+      // Log detallado de la evolución
+      const stageNames = ['Egg', 'Baby', 'Child', 'Young', 'Adult', 'ReadyToAscend', 'Dead'];
+      const fromStage = stageNames[oldStage];
+      const toStage = stageNames[this.stage];
+
+      if (newPersonalityName === 'Descuidado') {
+        console.log(`[Pet] 🚨 Evolved ${fromStage} → ${toStage}: DESCUIDADO (neglected care)`);
+      } else if (newPersonalityName === 'Patata') {
+        console.log(`[Pet] 🥔 Evolved ${fromStage} → ${toStage}: PATATA (no memories)`);
       } else {
-        this.personality = new Personality('descuidado');
+        console.log(`[Pet] ✨ Evolved ${fromStage} → ${toStage}: "${oldPersonality || 'Baby'}" + "${dominantMemory}" → "${newPersonalityName}"`);
       }
-      console.log(`[Pet] Evolved to ${LifeStage[this.stage]} staying in DESCUIDADO line: ${this.personality.name}`);
-    }
-    // Evolución normal basado en recuerdos
-    else {
-      const dominantMemory = this.memorySystem.selectDominantMemory();
-      if (dominantMemory) {
-        this.personality = this.mixPersonalities(this.personality, dominantMemory, oldStage);
-        console.log(`[Pet] Evolved to ${LifeStage[this.stage]} with personality ${this.personality.name}`);
-      } else {
-        console.log(`[Pet] Evolved to ${LifeStage[this.stage]} (no memories, keeping current personality)`);
+    } else {
+      // Fallback: mantener personalidad actual o asignar neutral
+      if (!this.personality) {
+        this.personality = new Personality('neutral');
       }
+      console.log(`[Pet] ⚠️ Evolution failed: No valid path found for "${oldPersonality}" + "${dominantMemory}" at stage ${oldStage}`);
     }
 
     // Olvidar recuerdos al evolucionar
@@ -154,36 +164,6 @@ export class Pet {
 
     if (this.onEvolve) {
       this.onEvolve(this.stage);
-    }
-  }
-
-  mixPersonalities(current: Personality | null, dominantMemory: string, fromStage: LifeStage): Personality {
-    // Lógica de mezcla según etapa
-    switch (fromStage) {
-      case LifeStage.Baby:
-        // Bebé → Niño: Solo usa el recuerdo dominante
-        return new Personality(dominantMemory);
-
-      case LifeStage.Child:
-        // Niño → Joven: Mezcla personalidad niño + recuerdo dominante
-        if (current) {
-          // Simplificado: Combinar nombres
-          const mixedName = `${current.name}+${dominantMemory}`;
-          return new Personality(mixedName);
-        }
-        return new Personality(dominantMemory);
-
-      case LifeStage.Young:
-        // Joven → Adulto: Arquetipo + recuerdo dominante
-        // TODO: Implementar incompatibilidades (crisis adolescencia)
-        if (current) {
-          const mixedName = `${current.name}+${dominantMemory}`;
-          return new Personality(mixedName);
-        }
-        return new Personality(dominantMemory);
-
-      default:
-        return current || new Personality('neutral');
     }
   }
 

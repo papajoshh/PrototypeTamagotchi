@@ -70,11 +70,11 @@ export class TheButtonUI {
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
 
-      this.handleClick(x, y);
+      this.handleClick(x, y, e);
     });
   }
 
-  private handleClick(x: number, y: number): void {
+  private handleClick(x: number, y: number, e?: MouseEvent): void {
     const state = this.game.getState();
 
     if (state.state === 'waiting') {
@@ -86,9 +86,13 @@ export class TheButtonUI {
 
       if (x >= startButtonX && x <= startButtonX + startButtonW &&
           y >= startButtonY && y <= startButtonY + startButtonH) {
+        if (e) e.stopPropagation(); // Prevenir propagación al GameUI
         this.game.start();
       }
     } else if (state.state === 'playing') {
+      // Prevenir propagación durante el juego
+      if (e) e.stopPropagation();
+
       // Click en el botón del juego - ÁREA EXTENDIDA (más fácil de clickear)
       const buttonX = this.canvas.width / 2 - 150; // Extendido 50px a cada lado
       const buttonY = 400; // Extendido 50px hacia arriba
@@ -101,6 +105,7 @@ export class TheButtonUI {
       }
     } else if (state.state === 'finished') {
       // Click para cerrar y ver recompensas
+      if (e) e.stopPropagation(); // CRÍTICO: Prevenir propagación al GameUI
       this.handleGameEnd();
     }
   }

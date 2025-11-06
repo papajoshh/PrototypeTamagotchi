@@ -6,6 +6,7 @@ import { Poop } from './core/Poop';
 import { Illness } from './core/Illness';
 import { MemorySystem } from './core/MemorySystem';
 import { IngredientInventory } from './core/IngredientInventory';
+import { EvolutionTree } from './core/EvolutionTree';
 
 // Inicializar juego
 const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
@@ -129,6 +130,20 @@ console.log('  forceNeglect()     - Mark as neglected (evolves to Descuidado)');
 console.log('  addIngredient(personality, tier) - Add 5 ingredients');
 console.log('    Example: addIngredient("anxious", 2)');
 console.log('');
+console.log('🍽️  HUNGER DEBUG:');
+console.log('  setHunger(stars)   - Set hunger to 0-3 stars');
+console.log('  makeHungry()       - Set hunger to 1 star');
+console.log('  makeStarving()     - Set hunger to 0 stars');
+console.log('  makeFull()         - Set hunger to 3 stars (full)');
+console.log('');
+console.log('🧬 EVOLUTION DEBUG:');
+console.log('  addMemory(personality, count) - Add memories (anxious/edgy/geek/sassy/intelectual)');
+console.log('  forceEvolve()      - Force evolution to next stage');
+console.log('  getNextEvolution() - Preview next evolution');
+console.log('  showPossibleEvolutions() - Show all possible evolutions');
+console.log('  testEvolutionPath("child", "young", "adult") - Test full evolution');
+console.log('    Example: testEvolutionPath("intelectual", "edgy", "sassy") → Glados');
+console.log('');
 console.log('🔔 NOTIFICATIONS:');
 console.log('  testNotification(type) - Test specific notification');
 console.log('    Types: attention_low, attention_critical, illness,');
@@ -217,6 +232,173 @@ console.log('  - pet.memorySystem - Check memories');
 (window as any).forceNeglect = () => {
   pet.wasNeglected = true;
   console.log('Pet marked as neglected! Will evolve to Descuidado on next evolution.');
+};
+
+// Funciones de debug para hambre
+(window as any).setHunger = (stars: number) => {
+  if (stars < 0 || stars > 3) {
+    console.error('Hunger stars must be between 0 and 3');
+    return;
+  }
+  (pet.hunger as any).stars = stars;
+  console.log(`Hunger set to ${stars} stars`);
+};
+
+(window as any).makeHungry = () => {
+  (pet.hunger as any).stars = 1;
+  console.log('Pet is now hungry! (1 star)');
+};
+
+(window as any).makeStarving = () => {
+  (pet.hunger as any).stars = 0;
+  console.log('Pet is now starving! (0 stars)');
+};
+
+(window as any).makeFull = () => {
+  (pet.hunger as any).stars = 3;
+  console.log('Pet is now full! (3 stars)');
+};
+
+// Funciones de debug para evolución
+(window as any).addMemory = (personality: string, count: number = 1) => {
+  for (let i = 0; i < count; i++) {
+    pet.memorySystem.addMemory('food', personality.toLowerCase());
+  }
+  console.log(`Added ${count} "${personality}" memories`);
+  console.log('Memory distribution:', Object.fromEntries(pet.memorySystem.getMemoryDistribution()));
+};
+
+(window as any).forceEvolve = () => {
+  if (pet.stage >= LifeStage.ReadyToAscend) {
+    console.warn('Pet is already at max stage (ReadyToAscend)');
+    return;
+  }
+
+  const oldStage = ['Egg', 'Baby', 'Child', 'Young', 'Adult', 'ReadyToAscend', 'Dead'][pet.stage];
+  const oldPersonality = pet.personality?.name || 'none';
+  const memoryCount = pet.memorySystem.getMemoryCount();
+
+  console.log(`🔄 Forcing evolution from ${oldStage} (${oldPersonality}) with ${memoryCount} memories...`);
+
+  // Forzar evolución
+  pet.evolve();
+
+  const newStage = ['Egg', 'Baby', 'Child', 'Young', 'Adult', 'ReadyToAscend', 'Dead'][pet.stage];
+  const newPersonality = pet.personality?.name || 'none';
+
+  console.log(`✨ Evolved to ${newStage}: "${newPersonality}"`);
+};
+
+(window as any).getNextEvolution = () => {
+  const currentPersonality = pet.personality?.name || null;
+  const dominantMemory = pet.memorySystem.selectDominantMemory();
+
+  if (!currentPersonality) {
+    console.log('Pet has no personality yet (still Baby)');
+    console.log('Possible evolutions: anxious, edgy, geek, intelectual, sassy (based on memories)');
+    return;
+  }
+
+  if (!dominantMemory) {
+    console.log('❌ No memories! Pet will become "Patata" on next evolution');
+    return;
+  }
+
+  const nextPersonality = EvolutionTree.getNextPersonality(
+    pet.stage,
+    currentPersonality,
+    dominantMemory,
+    pet.wasNeglected
+  );
+
+  if (nextPersonality) {
+    const stageNames = ['Egg', 'Baby', 'Child', 'Young', 'Adult'];
+    const nextStage = stageNames[pet.stage + 1];
+    console.log(`🔮 Next evolution: "${currentPersonality}" + "${dominantMemory}" → "${nextPersonality}" (${nextStage})`);
+
+    // Mostrar sprite base que se usará
+    const baseSprite = EvolutionTree.getBaseSprite(nextPersonality);
+    console.log(`   Sprite: ${baseSprite}.png`);
+  } else {
+    console.log(`❌ No valid evolution path for "${currentPersonality}" + "${dominantMemory}" at stage ${pet.stage}`);
+  }
+};
+
+(window as any).showPossibleEvolutions = () => {
+  const currentPersonality = pet.personality?.name;
+
+  if (!currentPersonality) {
+    console.log('Pet has no personality yet (still Baby)');
+    return;
+  }
+
+  const possibilities = EvolutionTree.getPossibleEvolutions(pet.stage, currentPersonality);
+
+  if (possibilities.length === 0) {
+    console.log(`No evolutions available for "${currentPersonality}" at current stage`);
+    return;
+  }
+
+  const stageNames = ['Egg', 'Baby', 'Child', 'Young', 'Adult'];
+  const nextStage = stageNames[pet.stage + 1];
+
+  console.log(`🌳 Possible evolutions from "${currentPersonality}" to ${nextStage}:`);
+  possibilities.forEach(p => {
+    const sprite = EvolutionTree.getBaseSprite(p);
+    console.log(`   • "${p}" (sprite: ${sprite}.png)`);
+  });
+};
+
+(window as any).skipToChild = () => {
+  if (pet.stage !== LifeStage.Egg && pet.stage !== LifeStage.Baby) {
+    console.warn('Pet is already past Baby stage');
+    return;
+  }
+
+  // Tap egg if still egg
+  if (pet.stage === LifeStage.Egg) {
+    pet.tapEgg();
+    console.log('🥚 Egg hatched!');
+  }
+
+  // Add some memories
+  addMemory('intelectual', 3);
+  addMemory('edgy', 2);
+
+  // Force evolve to Child
+  pet.growthPoints = 10000; // Exceed threshold
+  console.log('⚡ Skipping to Child stage...');
+  setTimeout(() => ui.render(), 100);
+};
+
+(window as any).testEvolutionPath = (childPersonality: string, youngMemory: string, adultMemory: string) => {
+  console.log(`🧪 Testing evolution path: Child "${childPersonality}" → Young → Adult`);
+  console.log('━'.repeat(60));
+
+  // Reset to baby
+  resetPet();
+  pet.stage = LifeStage.Baby;
+  pet.growthPoints = 0;
+
+  // Baby → Child with childPersonality
+  console.log(`\n1️⃣ Baby → Child with memory "${childPersonality}"`);
+  addMemory(childPersonality, 5);
+  forceEvolve();
+
+  // Child → Young with youngMemory
+  console.log(`\n2️⃣ Child → Young with memory "${youngMemory}"`);
+  addMemory(youngMemory, 5);
+  forceEvolve();
+
+  // Young → Adult with adultMemory
+  console.log(`\n3️⃣ Young → Adult with memory "${adultMemory}"`);
+  addMemory(adultMemory, 5);
+  forceEvolve();
+
+  console.log('\n' + '━'.repeat(60));
+  console.log(`✅ Evolution path complete!`);
+  console.log(`   Final personality: "${pet.personality?.name}"`);
+  console.log(`   Sprite: ${EvolutionTree.getBaseSprite(pet.personality?.name || 'neutral')}.png`);
 };
 
 (window as any).pet = pet;

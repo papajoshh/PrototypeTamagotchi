@@ -1,5 +1,6 @@
 import { Pet } from '../core/Pet';
 import { LifeStage } from '../core/LifeStage';
+import { EvolutionTree } from '../core/EvolutionTree';
 import { TIME_MODES } from '../core/GameLoop';
 import { TheButtonUI } from '../minigames/theButton/TheButtonUI';
 import { TheButtonRewards } from '../minigames/theButton/TheButtonRewards';
@@ -116,16 +117,48 @@ export class GameUI {
   }
 
   private preloadSprites() {
-    const stages = ['child', 'young', 'adult'];
-    const personalities = ['anxious', 'edgy', 'geek', 'intelectual', 'sassy', 'neutral'];
+    // Preload child sprites (solo base personalities)
+    const childPersonalities = ['anxious', 'edgy', 'geek', 'intelectual', 'sassy', 'neutral'];
+    childPersonalities.forEach(personality => {
+      const key = `child-${personality}`;
+      const img = new Image();
+      img.src = `/assets/pets/child/${personality}.png`;
+      this.spriteCache.set(key, img);
+    });
 
-    stages.forEach(stage => {
-      personalities.forEach(personality => {
-        const key = `${stage}-${personality}`;
-        const img = new Image();
-        img.src = `/assets/pets/${stage}/${personality}.png`;
-        this.spriteCache.set(key, img);
-      });
+    // Preload young sprites (arquetipos específicos + base)
+    const youngSprites = [
+      'AbsolutoEdgy', 'CerebroGalaxia', 'Cosplayer',
+      'El villano que en realidad es buen tipo', 'ElPersonajeProdigioso',
+      'ElVillanoDeTuSerieFavorita', 'Emo', 'Fanatico', 'Ingeniero',
+      'JugadorDeRol', 'Nerd', 'Otaku', 'OtakuCringe', 'Overthinker',
+      'Showman',
+      // Base personalities como fallback
+      'anxious', 'edgy', 'geek', 'intelectual', 'sassy', 'neutral'
+    ];
+    youngSprites.forEach(sprite => {
+      const key = `young-${sprite}`;
+      const img = new Image();
+      img.src = `/assets/pets/young/${sprite}.png`;
+      this.spriteCache.set(key, img);
+    });
+
+    // Preload adult sprites (personalidades finales específicas + base)
+    const adultSprites = [
+      'Bowser', 'Drácula', 'Dungeon Master', 'Edgar Allan Poe', 'Eggman',
+      'Elsa', 'Frodo', 'Gerard Way', 'Glados', 'Hackerman', 'Kira', 'Kojima',
+      'L', 'Lovecraft', 'Lucifer', 'Megamente', 'Mewtwo', 'Milenial', 'Neo',
+      'R2D2', 'Reddit', 'Sasuke', 'Shadow', 'Sheldon Cooper', 'Shinji', 'Tails',
+      // Base personalities como fallback
+      'anxious', 'edgy', 'geek', 'intelectual', 'sassy', 'neutral',
+      // Placeholder para sprites faltantes
+      'placeholder'
+    ];
+    adultSprites.forEach(sprite => {
+      const key = `adult-${sprite}`;
+      const img = new Image();
+      img.src = `/assets/pets/adult/${sprite}.png`;
+      this.spriteCache.set(key, img);
     });
 
     // Preload special sprites
@@ -240,30 +273,45 @@ export class GameUI {
 
     if (!stageFolder) return null;
 
-    // Extract base personality from mixed personalities
-    // e.g., "anxious+edgy" -> "anxious"
-    let personalityKey = 'neutral';
-    if (this.pet.personality) {
-      const personalityName = this.pet.personality.name.toLowerCase();
+    // Get sprite filename using EvolutionTree
+    // Handles exact names like "Glados", "Ingeniero", etc.
+    if (!this.pet.personality) return null;
 
-      // Si es descuidado, no tiene sprite, usar emoji
-      if (personalityName.includes('descuidado') || personalityName.includes('neglected')) {
-        return null; // Use emoji rendering
-      }
+    const spriteFilename = EvolutionTree.getSpriteFilename(this.pet.personality.name);
 
-      // Try to match one of the base personalities
+    // Si es descuidado o patata, usar emoji
+    if (spriteFilename === 'neutral' &&
+        (this.pet.personality.name.toLowerCase().includes('descuidado') ||
+         this.pet.personality.name.toLowerCase().includes('patata'))) {
+      return null; // Use emoji rendering
+    }
+
+    // Try to get exact sprite first
+    const specificKey = `${stageFolder}-${spriteFilename}`;
+    let sprite = this.spriteCache.get(specificKey);
+
+    // Fallback 1: try base personality sprites
+    if (!sprite || !sprite.complete) {
       const basePersonalities = ['anxious', 'edgy', 'geek', 'intelectual', 'sassy'];
       for (const base of basePersonalities) {
-        if (personalityName.includes(base)) {
-          personalityKey = base;
-          break;
+        if (this.pet.personality.name.toLowerCase().includes(base)) {
+          const fallbackKey = `${stageFolder}-${base}`;
+          sprite = this.spriteCache.get(fallbackKey);
+          if (sprite && sprite.complete) break;
         }
       }
     }
 
-    // Try to get specific sprite, fallback to neutral
-    const specificKey = `${stageFolder}-${personalityKey}`;
-    const sprite = this.spriteCache.get(specificKey);
+    // Fallback 2: placeholder para adult (sprites faltantes)
+    if ((!sprite || !sprite.complete) && this.pet.stage === LifeStage.Adult) {
+      sprite = this.spriteCache.get('adult-placeholder');
+      console.log(`[GameUI] Using placeholder for Adult "${this.pet.personality.name}"`);
+    }
+
+    // Fallback 3: neutral como último recurso
+    if (!sprite || !sprite.complete) {
+      sprite = this.spriteCache.get(`${stageFolder}-neutral`);
+    }
 
     if (sprite && sprite.complete) {
       return sprite;
@@ -432,6 +480,11 @@ export class GameUI {
   }
 
   handleClick(x: number, y: number) {
+    // PRIORIDAD 0: Si hay minijuego activo, NO procesar clicks del main room
+    if (this.activeMinigame) {
+      return;
+    }
+
     // PRIORIDAD 1: Settings panel (si está abierto)
     if (this.currentMenu === 'settings') {
       // Verificar si click en barra de volver (TODA la barra horizontal, no solo la flecha)
@@ -636,6 +689,13 @@ export class GameUI {
         if (this.pet.illness.isCurrentlyIll()) {
           this.closeMenu();
           this.showFeedback('refuse_food_sick');
+          return;
+        }
+
+        // Verificar si está lleno antes de cocinar
+        if (this.pet.hunger.isFullySatiated()) {
+          this.closeMenu();
+          this.showFeedback('refuse_food');
           return;
         }
 
@@ -2486,6 +2546,9 @@ export class GameUI {
     // Cerrar el minijuego primero (para volver al main room)
     this.activeMinigame = null;
 
+    // Cerrar el menú de comida al volver del minijuego
+    this.feedMenuOpen = false;
+
     console.log(`[GameUI] Cooking minigame ${success ? 'SUCCESS' : 'FAILED'} with ingredient: ${ingredientId}`);
 
     // Obtener el ingrediente
@@ -2511,7 +2574,8 @@ export class GameUI {
       const result = this.pet.feedWithIngredient(ingredient);
       if (result.success) {
         console.log(`[GameUI] Pet fed successfully with ${ingredient.name}`);
-        this.showFeedback('eat');
+        // NO mostrar feedback de texto, solo las estrellas y recuerdo flotantes
+        // this.showFeedback('eat'); // REMOVIDO - no hay bocadillo para 'eat'
 
         // Mostrar estrellas y recuerdo flotantes
         this.showFeedingRewards(ingredient);

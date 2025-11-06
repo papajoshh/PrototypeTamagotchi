@@ -96,9 +96,13 @@ export class GuessTheHigherUI {
 
       if (x >= buttonX && x <= buttonX + buttonW &&
           y >= buttonY && y <= buttonY + buttonH) {
+        e.stopPropagation(); // Prevenir propagación al GameUI
         this.game.start();
       }
     } else if (state.state === 'playing' && state.waitingForChoice) {
+      // Prevenir propagación durante el juego
+      e.stopPropagation();
+
       // Botones Higher/Lower
       const buttonY = 520;
       const buttonH = 60;
@@ -131,6 +135,7 @@ export class GuessTheHigherUI {
 
       if (x >= buttonX && x <= buttonX + buttonW &&
           y >= buttonY && y <= buttonY + buttonH) {
+        e.stopPropagation(); // CRÍTICO: Prevenir propagación al GameUI
         this.handleGameEnd();
       }
     }
