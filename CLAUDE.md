@@ -1,6 +1,6 @@
 # 🤖 Guía Claude para Tamagotchi Web Prototype
 
-*Última actualización: 2025-01-04*
+*Última actualización: 2025-01-05*
 *Archivo principal de contexto para agentes de IA*
 
 ## 📋 Contexto Rápido del Proyecto
@@ -26,13 +26,20 @@
   - **TheButton** (Anxious): Tap rápido con probabilidad decreciente
   - **EdgyBunBun** (Edgy): Plataformer vertical con plataformas procedurales
   - **SimonDice** (Intelectual): Memoria - Repite secuencias de 3 botones únicos que se barajan
+  - **Parachute** (Sassy): Recolección - Mueve canasta para recoger objetos buenos y evitar malos
 - **UI Main Room**: Interfaz completa con menús desplegables para comida, juego y decoración
+- **Sistema de Settings**: Panel completo con configuración de audio, sueño, notificaciones
+  - **Sleep System**: Modo automático/manual, horario configurable, pantalla de sueño, despertar temporal
+  - **SettingsUI**: Panel independiente con toggles, sliders, popups, warnings
 - **Sistema de Notificaciones**: Push notifications para eventos críticos
 - **Persistencia**: LocalStorage con serialización/deserialización
 - **Simulación Offline**: Calcula progreso cuando el jugador está ausente
+- **PWA (Progressive Web App)**: Instalable en móvil, funciona offline, service worker
+  - **Desplegado en Vercel**: https://tamagotchi-prototype.vercel.app
+  - **Canvas Responsive**: Mantiene aspect ratio 3:4 en todos los dispositivos
 
 ### 🚧 En Desarrollo
-- Más minijuegos (Higher or Lower, Parachute)
+- Más minijuegos (Higher or Lower)
 - Sistema de evolución completo
 - Balance económico de ingredientes
 
@@ -55,10 +62,13 @@ tamagotchi-web-prototype/
 │   │   ├── MemorySystem.ts
 │   │   ├── RoomStyle.ts        # Estilos de habitación
 │   │   ├── NotificationSystem.ts
+│   │   ├── Settings.ts         # Sistema de configuraciones
+│   │   ├── Sleep.ts            # Sistema de sueño
 │   │   └── GameLoop.ts         # Loop principal
 │   │
 │   ├── ui/
-│   │   └── GameUI.ts           # Interfaz gráfica completa
+│   │   ├── GameUI.ts           # Interfaz gráfica principal
+│   │   └── SettingsUI.ts       # Panel de configuraciones
 │   │
 │   ├── minigames/              # Minijuegos
 │   │   └── theButton/
@@ -131,6 +141,35 @@ El **Egg es un estado inerte** donde la mascota NO tiene necesidades activas:
 2. **Prototipado rápido**: Favorecer velocidad sobre arquitectura perfecta
 3. **Fidelidad al Unity**: Mantener mecánicas idénticas al proyecto principal
 4. **Testing manual**: No hay tests automatizados (es un prototipo)
+5. **Modularidad**: Evaluar si crear archivos nuevos antes de hacer crecer clases grandes
+
+### ⚠️ Cuándo Crear Archivos Nuevos
+
+**IMPORTANTE**: Antes de agregar código a una clase existente, evalúa si necesitas crear un archivo nuevo.
+
+**Criterios para crear archivo nuevo**:
+- ✅ La clase actual tiene **>1500 líneas**
+- ✅ El nuevo código es un **sistema completo** con su propia lógica (rendering, state, click handling)
+- ✅ Ya existen **precedentes** de archivos separados para sistemas similares (ej: minigames tienen UIs separadas)
+- ✅ El nuevo código tiene **múltiples responsabilidades** que se pueden aislar
+
+**Ejemplos**:
+- ✅ **Sí crear**: `SettingsUI.ts` - Sistema completo de settings con panel, rendering, popups, click handling (GameUI.ts ya tenía ~2500 líneas)
+- ✅ **Sí crear**: `TheButtonUI.ts` - Minijuego completo con su propio rendering y lógica
+- ❌ **No crear**: Función helper pequeña de 50 líneas que solo usa una clase
+- ❌ **No crear**: Feature simple que no justifica la complejidad de un archivo nuevo
+
+**Beneficios**:
+- Código más organizado y mantenible
+- Clases no crecen indefinidamente
+- Más fácil de testear y modificar independientemente
+- Sigue el patrón ya establecido en el proyecto
+
+**Proceso**:
+1. Identificar si el nuevo código cumple los criterios
+2. Si es sí: Crear archivo nuevo con su propia clase
+3. Importar y usar en la clase principal
+4. Documentar en CLAUDE.md
 
 ## 🔧 Comandos Principales
 
@@ -333,6 +372,82 @@ successChance = 100 - (score * 0.4);
 - `/assets/minigames/SimonDice/Bubble Sequence.png`
 - `/assets/minigames/SimonDice/TimesUp_Background.png`
 - `/assets/minigames/SimonDice/TIMES UP_letter.png`
+
+### Parachute (Implementado)
+
+**Personalidad**: Sassy
+**Mecánica**: Recolección - Mueve una canasta horizontalmente para recoger objetos buenos y evitar malos
+
+**Fases**:
+1. **Transición (2s)**: Huevo negro crece + franja blanca expande vertical (igual que TheButton)
+2. **Waiting**: Pantalla con instrucciones + botón "¡Empezar!"
+3. **Playing (30s)**: Arrastra/mueve el jugador para recoger objetos cayendo
+4. **Finished**: Animación Times Up con sprites + score y premios + botón "Ver Recompensas"
+5. **Rewards**: Ingredientes flotan sobre pet en main room
+
+**Mecánica de Juego**:
+- El jugador (canasta con mascota DEBAJO) se mueve **horizontalmente** en la parte inferior de la pantalla
+- **Controles**:
+  - **Drag horizontal** con mouse/touch: sigue el cursor/dedo directamente con interpolación rápida (40% por frame)
+  - **Flechas izquierda/derecha** para mover con teclado (movimiento continuo mientras se mantiene presionada)
+  - Movimiento completamente suave sin saltos ni interrupciones
+- Caen objetos desde arriba a diferentes velocidades
+- El jugador debe **recoger objetos buenos** y **evitar objetos malos**
+- Margen de recogida: 8% del ancho de pantalla
+- Altura de recogida: 85% de la altura (rango de detección: 5% de altura alrededor de 0.85)
+- **Feedback visual**: Al recoger un objeto, aparece un "+X" (o "-X") que sube y hace fade out en 1 segundo
+- **Visual**: La mascota se dibuja DEBAJO de la canasta (no arriba)
+
+**Objetos Buenos** (añaden puntos - más valor = más rápido):
+- 💰 **Coin** (Moneda.png): +1 punto, velocidad 320px/s (MÁS LENTO), probabilidad 50%
+- ⭐ **Star** (redeem.png): +3 puntos, velocidad 360px/s (MEDIO), probabilidad 30%
+- 💎 **Diamond** (savings.png): +5 puntos, velocidad 400px/s (MÁS RÁPIDO), probabilidad 20%
+
+**Objetos Malos**:
+- 💩 **Caca**: Stun 2 segundos, velocidad 440px/s, probabilidad 75%
+- 💣 **Bomba/Nuke**: Stun 3 segundos + Flash blanco + -5 puntos, **velocidad 533px/s (1.2s de arriba a abajo)**, probabilidad 25%
+
+**Sistema de Spawn**:
+- **Good/Bad ratio**: 70% objetos buenos, 30% malos
+- **Spawn rate progresivo FRENÉTICO**: Empieza en 0.8s entre objetos, disminuye hasta 0.2s al final del juego
+- **Posiciones aleatorias**: Los objetos aparecen en posiciones X aleatorias
+- Spawn aumenta linealmente con el progreso del juego (más objetos = más dificultad)
+- **Ritmo muy intenso**: Objetos caen 2x más rápido, bombas a velocidad extrema
+
+**Efectos especiales**:
+- **Bomba**: Produce un flash blanco con texto "BOOOM!" grande en rojo (0.5s fade out)
+- **Stun**: El jugador no puede moverse temporalmente, muestra texto "STUN! (X.Xs)" debajo del jugador
+- **Score popup**: Aparece "+X" o "-X" en la posición del objeto recogido, sube 60px y hace fade out en 1s (verde para positivo, rojo para negativo)
+- **Times Up animation**: Fondo entra desde izquierda (0.1s), letras desde derecha con overshoot (0.2s), score y premios aparecen tras 0.3s
+- **Colisión precisa**: Solo detecta objetos en un rango de 0.05 (5% de altura) para evitar colisiones con objetos invisibles
+
+**Premios** (basados en score):
+- **<30% (0-8 puntos)**: 1x Ingrediente Básico (Tier 1)
+- **30-70% (9-20 puntos)**: 1x Básico + 1x Medio (Tier 2)
+- **≥70% (21+ puntos)**: 1x Básico + 1x Premium (Tier 3)
+
+**Configuración**:
+- `maxTime`: 30 segundos
+- `maxExpectedScore`: 30 puntos
+- `playerSpeed`: 25.0 (0-1 por segundo) - EXTREMADAMENTE rápido
+- `keyboardMoveSpeed`: 1.6 (0-1 por segundo) - Movimiento continuo smooth (DOBLE velocidad)
+- `collectionMargin`: 0.08 (8% del ancho)
+- `collectionHeight`: 0.85 (85% de la altura)
+- `initialSpawnDelay`: 0.8s (ritmo FRENÉTICO)
+- `minSpawnDelay`: 0.2s (ritmo SUPER FRENÉTICO)
+- `bombFallSpeed`: 533px/s (1.2 segundos de arriba a abajo)
+- `goodObjectRatio`: 0.7 (70% buenos)
+- `scorePopupDuration`: 1s (duración del feedback visual)
+- **Control smooth**: Sistema de teclas presionadas para movimiento continuo sin saltos
+- Área de control: Toda la pantalla (drag + teclado)
+
+**Assets**:
+- `/assets/minigames/Parachute/Canasta.png` (jugador/basket)
+- `/assets/minigames/Parachute/Moneda.png` (coin - +1 punto)
+- `/assets/minigames/Parachute/redeem.png` (star - +3 puntos)
+- `/assets/minigames/Parachute/savings.png` (diamond - +5 puntos)
+- `/assets/minigames/Parachute/Caca.png` (poop - stun 2s)
+- `/assets/minigames/Parachute/NUKE.png` (bomb - stun 3s + -5 puntos + flash)
 
 ## 🍱 Sistema de Comida
 
@@ -629,6 +744,146 @@ Define todos los **tiempos del juego**:
 - Ajustar tiempos o balance
 - Añadir nuevas personalidades
 - Modificar mecánicas core del pet
+
+---
+
+## 📱 PWA (Progressive Web App)
+
+### ✅ Estado: Implementado y Desplegado
+
+El proyecto es una **PWA completa** instalable en móviles como app nativa.
+
+### 🌐 URL de Producción
+
+```
+https://tamagotchi-prototype.vercel.app
+```
+
+### 🎯 Características PWA
+
+1. **Instalable en Móvil**
+   - Android: Chrome → Menú (⋮) → "Instalar app"
+   - iOS: Safari → Compartir → "Añadir a pantalla de inicio"
+   - Se comporta como app nativa (sin barra del navegador)
+
+2. **Service Worker (Offline-First)**
+   - Ubicación: `public/sw.js`
+   - Estrategia: Cache First con Network Fallback
+   - Versión: `tamagotchi-v1` (cambiar para forzar actualización)
+   - Cachea: Assets estáticos (JS, CSS, imágenes, sprites)
+   - Funciona sin internet después de primera visita
+
+3. **Manifest PWA**
+   - Ubicación: `public/manifest.json`
+   - Orientación: Portrait (forzada)
+   - Display: Standalone (fullscreen sin browser UI)
+   - Theme color: #ffffff
+   - Iconos: 192x192 y 512x512 (`public/icon-*.png`)
+
+4. **Canvas Responsive (Aspect Ratio 3:4)**
+   - Dimensiones fijas: 480x640px
+   - En móvil: Escala con letterboxing (barras negras)
+   - Mantiene ratio 3:4 **SIEMPRE**
+   - Formula: `width: min(100vw, calc(100vh * 0.75))`
+   - Desktop: Centrado con bordes redondeados
+
+5. **Meta Tags Móvil**
+   - iOS: `apple-mobile-web-app-capable`, status bar, touch icon
+   - Android: `theme-color`, viewport sin zoom
+   - Prevención de bounce, tap highlight, text selection
+   - Soporte para notch de iPhone (`safe-area-inset`)
+
+### 🚀 Deployment en Vercel
+
+**CLI Rápido**:
+```bash
+cd "D:\Repositorios\Michi Games\TamagotchiPrototype"
+vercel --prod
+```
+
+**Features**:
+- ✅ HTTPS automático (obligatorio para PWA)
+- ✅ CDN global (rápido desde cualquier lugar)
+- ✅ Zero-config para Vite (detección automática)
+- ✅ Deploy en ~30 segundos
+- ✅ URL permanente: `tamagotchi-prototype.vercel.app`
+
+### 📂 Archivos PWA Clave
+
+```
+public/
+├── manifest.json          # Configuración PWA (nombre, iconos, display)
+├── sw.js                  # Service Worker (cache offline)
+├── icon-192.png          # Icono PWA 192x192
+└── icon-512.png          # Icono PWA 512x512
+
+src/
+└── main.ts               # Registro del Service Worker (líneas 246-297)
+
+index.html                # Meta tags PWA, manifest link, viewport
+```
+
+### 🔄 Actualizar Service Worker
+
+Cuando hagas cambios que requieran invalidar cache:
+
+1. **Cambiar versión en `public/sw.js`**:
+   ```javascript
+   const CACHE_VERSION = 'tamagotchi-v2'; // Incrementar
+   ```
+
+2. **Redesplegar**:
+   ```bash
+   vercel --prod
+   ```
+
+3. **El SW preguntará al usuario** si quiere actualizar (confirm dialog automático)
+
+### 🐛 Testing PWA Local
+
+1. **Build de producción**:
+   ```bash
+   npm run build
+   npm run preview
+   ```
+
+2. **DevTools → Application**:
+   - Service Workers: Verificar estado "Activated"
+   - Manifest: Ver configuración y iconos
+   - Cache Storage: Ver assets cacheados
+
+3. **Probar offline**:
+   - DevTools → Network → ☑️ "Offline"
+   - Recargar → Debería funcionar
+
+### 📝 Notas Técnicas
+
+- **Service Worker solo funciona con HTTPS** (localhost es excepción)
+- **Canvas NO se estira**: Usa `object-fit: contain` + cálculos de ratio
+- **Loading screen**: `#loading` (oculto tras 500ms)
+- **Updates automáticos**: Polling cada 60s, prompt al usuario
+- **LocalStorage persiste**: Funciona offline, sincroniza online
+
+### 🎨 Aspect Ratio Fix (Importante)
+
+El canvas mantiene **siempre** 480x640px (3:4):
+
+```css
+/* Móvil: Escalar manteniendo ratio */
+#app {
+  width: min(100vw, calc(100vh * 0.75));  /* 0.75 = 3/4 */
+  height: min(100vh, calc(100vw * 1.333)); /* 1.333 = 4/3 */
+}
+
+#game-canvas {
+  object-fit: contain; /* No deformar */
+}
+```
+
+**Resultado**:
+- Móvil vertical → Barras arriba/abajo
+- Móvil horizontal → Barras izquierda/derecha
+- Desktop → Centrado con bordes
 
 ---
 

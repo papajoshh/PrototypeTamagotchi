@@ -1,5 +1,6 @@
 import { Pet } from './Pet';
 import { NotificationSystem } from './NotificationSystem';
+import { Settings } from './Settings';
 
 export const TIME_MODES = {
   REAL_TIME: 1,      // 1x - Tiempos reales del juego
@@ -11,6 +12,7 @@ export const TIME_MODES = {
 
 export class GameLoop {
   private pet: Pet;
+  private settings: Settings;
   private lastUpdate: number = Date.now();
   private timeMultiplier: number = TIME_MODES.REAL_TIME;
   private onUpdate?: (pet: Pet) => void;
@@ -20,10 +22,12 @@ export class GameLoop {
   private previousHungerStars: number = 3;
   private previousBoringStars: number = 3;
   private previousIllness: boolean = false;
+  private previousPoop: boolean = false;
   private previousStage: number = 0;
 
   constructor(pet: Pet) {
     this.pet = pet;
+    this.settings = new Settings(); // Carga automáticamente desde localStorage
     this.notifications = new NotificationSystem();
 
     // Cargar estado guardado
@@ -63,7 +67,13 @@ export class GameLoop {
       const deltaTime = ((now - this.lastUpdate) / 1000) * this.timeMultiplier;
       this.lastUpdate = now;
 
-      this.pet.update(deltaTime);
+      // Update sleep system (verifica si debe estar dormido según hora real)
+      this.settings.sleep.timePass(new Date());
+
+      // Solo actualizar pet si NO está durmiendo (el tiempo se congela mientras duerme)
+      if (!this.settings.sleep.isSleeping) {
+        this.pet.update(deltaTime);
+      }
 
       // Detectar cambios y enviar notificaciones
       this.checkNotifications();
@@ -90,6 +100,7 @@ export class GameLoop {
     const currentHungerStars = this.pet.hunger.getStars();
     const currentBoringStars = this.pet.boring.getStars();
     const currentIllness = this.pet.illness.isCurrentlyIll();
+    const currentPoop = this.pet.poop.hasPoopedNow();
     const currentStage = this.pet.stage;
 
     // Notificación: Hambre en 1 estrella (bajó de 2 o 3 a 1)
@@ -115,6 +126,11 @@ export class GameLoop {
     // Notificación: Enfermedad (nuevo)
     if (currentIllness && !this.previousIllness) {
       this.notifications.notify('illness');
+    }
+
+    // Notificación: Caca (nueva)
+    if (currentPoop && !this.previousPoop && this.settings.notifications.poopEnabled) {
+      this.notifications.notify('poop');
     }
 
     // Notificación: Cerca de morir (le quedan 10 minutos o menos)
@@ -150,6 +166,7 @@ export class GameLoop {
     this.previousHungerStars = currentHungerStars;
     this.previousBoringStars = currentBoringStars;
     this.previousIllness = currentIllness;
+    this.previousPoop = currentPoop;
     this.previousStage = currentStage;
   }
 
@@ -165,5 +182,9 @@ export class GameLoop {
 
   getTimeMultiplier(): number {
     return this.timeMultiplier;
+  }
+
+  getSettings(): Settings {
+    return this.settings;
   }
 }

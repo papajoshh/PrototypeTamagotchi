@@ -2,7 +2,13 @@
   "permissions": {
     "allow": [
       "Bash(npm run build:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(npm run dev:*)",
+      "Bash(\"D:\\Repositorios\\Michi Games\\TamagotchiPrototype\\src\\ui\\GameUI_temp.ts\")",
+      "Bash(npm install:*)",
+      "Bash(vercel --yes:*)",
+      "Bash(vercel login)",
+      "Bash(vercel --prod)"
     ],
     "deny": [],
     "ask": []

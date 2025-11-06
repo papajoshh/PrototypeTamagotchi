@@ -11,7 +11,8 @@ import { IngredientInventory } from './core/IngredientInventory';
 const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
 const pet = new Pet();
 const gameLoop = new GameLoop(pet);
-const ui = new GameUI(canvas, pet);
+const settings = gameLoop.getSettings();
+const ui = new GameUI(canvas, pet, settings);
 
 // Configurar callbacks
 ui.onFeedWithIngredient = (ingredientId: string) => {
@@ -33,6 +34,8 @@ ui.onFeedWithIngredient = (ingredientId: string) => {
     const result = pet.feedWithIngredient(ingredient);
     if (result.success) {
       console.log(`[Game] Fed pet with ${ingredient.name}`);
+      // Renovar despertar temporal si está activo
+      settings.sleep.refreshTemporaryWakeUp();
     } else if (result.reason === 'full') {
       console.log('[Game] Pet is full and refused food!');
       ui.showFeedback('refuse_food');
@@ -47,16 +50,29 @@ ui.onFeedWithIngredient = (ingredientId: string) => {
 ui.onPlayMinigame = (minigameId: string, personality: string) => {
   // Este callback ya no es necesario, GameUI.handleMinigameEnd maneja todo
   console.log(`[Game] Starting ${minigameId} (${personality}) minigame`);
+  // Renovar despertar temporal si está activo
+  settings.sleep.refreshTemporaryWakeUp();
+};
+
+ui.onStartCookingMinigame = (ingredientId: string, tier: number) => {
+  console.log(`[Game] Starting cooking minigame with ${ingredientId} (tier ${tier})`);
+  ui.launchCookingMinigame(ingredientId, tier);
+  // Renovar despertar temporal si está activo
+  settings.sleep.refreshTemporaryWakeUp();
 };
 
 ui.onCleanPoop = () => {
   pet.cleanPoop();
   console.log('[Game] Cleaned poop');
+  // Renovar despertar temporal si está activo
+  settings.sleep.refreshTemporaryWakeUp();
 };
 
 ui.onCure = () => {
   pet.cure();
   console.log('[Game] Cured illness');
+  // Renovar despertar temporal si está activo
+  settings.sleep.refreshTemporaryWakeUp();
 };
 
 ui.onTapEgg = () => {
@@ -108,6 +124,7 @@ console.log('🛠️  DEV TOOLS:');
 console.log('  resetPet()         - Clear save and restart');
 console.log('  killPet()          - Kill pet instantly');
 console.log('  makeIll()          - Make pet ill');
+console.log('  makePoop()         - Make pet poop instantly');
 console.log('  forceNeglect()     - Mark as neglected (evolves to Descuidado)');
 console.log('  addIngredient(personality, tier) - Add 5 ingredients');
 console.log('    Example: addIngredient("anxious", 2)');
@@ -177,6 +194,11 @@ console.log('  - pet.memorySystem - Check memories');
   console.log('Pet is now ill!');
 };
 
+(window as any).makePoop = () => {
+  pet.poop.forcePoop();
+  console.log('Pet pooped! 💩');
+};
+
 (window as any).addIngredient = (personality: string, tier: number = 1) => {
   const ingredient = (() => {
     switch(personality.toLowerCase()) {
@@ -220,3 +242,56 @@ console.log('  - pet.memorySystem - Check memories');
 window.addEventListener('beforeunload', () => {
   gameLoop.save();
 });
+
+// ============ PWA: Service Worker Registration ============
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js')
+      .then((registration) => {
+        console.log('[PWA] Service Worker registrado exitosamente:', registration.scope);
+
+        // Verificar actualizaciones cada 60 segundos
+        setInterval(() => {
+          registration.update();
+        }, 60000);
+
+        // Detectar actualizaciones del SW
+        registration.addEventListener('updatefound', () => {
+          const newWorker = registration.installing;
+          if (newWorker) {
+            newWorker.addEventListener('statechange', () => {
+              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                // Hay una nueva versión disponible
+                console.log('[PWA] Nueva versión disponible. Recarga para actualizar.');
+                // Opcional: Mostrar mensaje al usuario
+                if (confirm('Hay una nueva versión disponible. ¿Quieres actualizar?')) {
+                  newWorker.postMessage({ type: 'SKIP_WAITING' });
+                  window.location.reload();
+                }
+              }
+            });
+          }
+        });
+      })
+      .catch((error) => {
+        console.error('[PWA] Error al registrar Service Worker:', error);
+      });
+
+    // Recargar cuando el SW tome control
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!refreshing) {
+        refreshing = true;
+        window.location.reload();
+      }
+    });
+  });
+}
+
+// Ocultar loading screen cuando el juego esté listo
+setTimeout(() => {
+  const loading = document.getElementById('loading');
+  if (loading) {
+    loading.classList.add('hidden');
+  }
+}, 500);

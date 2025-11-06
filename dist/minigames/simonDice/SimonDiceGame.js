@@ -20,9 +20,9 @@ export class SimonDiceGame {
         // Countdown state
         this.countdownValue = 3;
         this.isShowingInstruction = true;
-        this.MAX_TIME = 60; // 60 segundos
+        this.MAX_TIME = 30; // 30 segundos
         this.BASE_SCORE = 1;
-        this.SEQUENCE_DISPLAY_TIME = 0.5; // segundos por botón
+        this.SEQUENCE_DISPLAY_TIME = 0.3; // segundos por botón (0.9s total)
         this.POST_SHUFFLE_DELAY = 2; // segundos después del shuffle
         this.ERROR_PAUSE_DURATION = 1; // segundos de pausa tras error
     }
@@ -111,7 +111,7 @@ export class SimonDiceGame {
             return true;
         }
         else {
-            // Wrong input
+            // Wrong input - don't change state, let UI handle the pause
             this.onSequenceError();
             return false;
         }
@@ -125,6 +125,9 @@ export class SimonDiceGame {
             this.scoreMultiplier = 2;
         }
         // Start new sequence after small delay (handled by UI)
+        // Don't change state here - UI will handle the success pause and then call startNewSequenceAfterSuccess
+    }
+    startNewSequenceAfterSuccess() {
         this.state = 'showingSequence';
         this.generateNewSequence();
     }
@@ -133,6 +136,9 @@ export class SimonDiceGame {
         this.correctStreakCount = 0;
         this.scoreMultiplier = 1;
         // Show new sequence after error pause (handled by UI)
+        // Don't change state here - UI will handle the error pause and then call startNewSequenceAfterError
+    }
+    startNewSequenceAfterError() {
         this.state = 'showingSequence';
         this.generateNewSequence();
     }
@@ -173,7 +179,7 @@ export class SimonDiceGame {
         return this.ERROR_PAUSE_DURATION;
     }
     calculateRewards() {
-        const maxExpectedScore = 30;
+        const maxExpectedScore = 5;
         const scorePercentage = (this.score / maxExpectedScore) * 100;
         let tier1 = 0;
         let tier2 = 0;
@@ -191,7 +197,7 @@ export class SimonDiceGame {
         return { tier1, tier2, tier3 };
     }
     getScorePercentage() {
-        const maxExpectedScore = 30;
+        const maxExpectedScore = 5;
         return (this.score / maxExpectedScore) * 100;
     }
     reset() {

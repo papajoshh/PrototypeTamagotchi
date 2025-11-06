@@ -56,6 +56,20 @@ export class Poop {
     this.timeSincePoop = 0;
   }
 
+  // Debug: Forzar caca inmediatamente
+  forcePoop() {
+    this.hasPooped = true;
+    this.timeSincePoop = 0;
+    this.timeUntilPoop = 0;
+  }
+
+  // Resetear completamente el sistema de caca
+  reset() {
+    this.hasPooped = false;
+    this.timeSincePoop = 0;
+    this.timeUntilPoop = 0;
+  }
+
   hasPoopedNow(): boolean {
     return this.hasPooped;
   }

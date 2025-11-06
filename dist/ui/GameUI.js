@@ -4,8 +4,13 @@ import { TheButtonRewards } from '../minigames/theButton/TheButtonRewards';
 import { EdgyBunBunUI } from '../minigames/edgyBunBun/EdgyBunBunUI';
 import { GuessTheHigherUI } from '../minigames/guessTheHigher/GuessTheHigherUI';
 import { SimonDiceUI } from '../minigames/simonDice/SimonDiceUI';
+import { ParachuteUI } from '../minigames/parachute/ParachuteUI';
+import { MochiCookingUI } from '../minigames/mochiCooking/MochiCookingUI';
+import { Ingredient } from '../core/Ingredient';
+import { SettingsUI } from './SettingsUI';
+import { FeedingRewards } from './FeedingRewards';
 export class GameUI {
-    constructor(canvas, pet) {
+    constructor(canvas, pet, settings) {
         this.timeMultiplier = 1;
         // Estado de UI
         this.currentMenu = null;
@@ -13,6 +18,19 @@ export class GameUI {
         this.MENU_ANIMATION_DURATION = 300; // ms
         this.menuAnimationStartTime = 0;
         this.isMenuClosing = false;
+        // Estado de scroll para settings
+        this.settingsScrollOffset = 0;
+        this.isDraggingSettings = false;
+        this.settingsDragStartY = 0;
+        this.settingsDragStartScrollOffset = 0;
+        this.settingsMaxScroll = 0;
+        // Settings UI state
+        this.settingsCache = new Map();
+        this.showingSleepSchedulePopup = false;
+        this.showingInitialSetupPopup = false;
+        this.tempSleepHour = 22;
+        this.tempWakeUpHour = 7;
+        this.sleepScreen = false; // True cuando está en pantalla de sleep
         // Sistema de feedback visual
         this.feedbackType = null;
         this.feedbackTimer = 0;
@@ -45,15 +63,20 @@ export class GameUI {
         this.activeMinigame = null;
         this.minigameRewards = null;
         this.showingRewards = false;
+        this.showingFeedingRewards = false;
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d');
         this.pet = pet;
+        this.settings = settings;
+        this.settingsUI = new SettingsUI(canvas, settings);
+        this.feedingRewards = new FeedingRewards(canvas);
         // Aplicar filtro blanco y negro al canvas
         this.canvas.style.filter = 'grayscale(1) contrast(2) brightness(1.1)';
         // Setup event listeners
         this.setupEventListeners();
         // Preload sprites
         this.preloadSprites();
+        // El popup de horario solo se abre desde settings, no automáticamente
     }
     preloadSprites() {
         const stages = ['child', 'young', 'adult'];
@@ -122,6 +145,25 @@ export class GameUI {
             img.src = `/assets/styles/${style}.png`;
             this.styleIconCache.set(style, img);
         });
+        // Preload settings sprites
+        const settingsSprites = [
+            'AlarmaIcon.png',
+            'Back.png',
+            'Background_Sleep_Options.png',
+            'Boton despertar.png',
+            'Boton mimir.png',
+            'Handler.png',
+            'Horario de sueño popup.png',
+            'SettingsOpenButton.png',
+            'ToggleOff.png',
+            'ToogleOn.png',
+            'Z.png'
+        ];
+        settingsSprites.forEach(filename => {
+            const img = new Image();
+            img.src = `/assets/settings/${filename}`;
+            this.settingsCache.set(filename, img);
+        });
     }
     getSpriteForPet() {
         // Special sprites for Egg and Baby
@@ -179,7 +221,7 @@ export class GameUI {
             const y = e.clientY - rect.top;
             this.handleClick(x, y);
         });
-        // Drag para scroll horizontal de ingredientes
+        // Drag para scroll horizontal de ingredientes y scroll vertical de settings
         this.canvas.addEventListener('mousedown', (e) => {
             const rect = this.canvas.getBoundingClientRect();
             const x = e.clientX - rect.left;
@@ -197,6 +239,20 @@ export class GameUI {
                     this.dragStartScrollX = this.ingredientScrollX;
                 }
             }
+            else if (this.currentMenu === 'settings') {
+                const panelHeight = 500;
+                const panelY = this.canvas.height - panelHeight * this.menuAnimationProgress;
+                const headerHeight = 50;
+                const closeBarHeight = 40;
+                const contentY = panelY + headerHeight;
+                const contentHeight = panelHeight - headerHeight - closeBarHeight;
+                // Solo permitir drag en el área de contenido (no en header ni en barra de cierre)
+                if (y >= contentY && y <= contentY + contentHeight) {
+                    this.isDraggingSettings = true;
+                    this.settingsDragStartY = y;
+                    this.settingsDragStartScrollOffset = this.settingsScrollOffset;
+                }
+            }
         });
         this.canvas.addEventListener('mousemove', (e) => {
             if (this.isDraggingIngredients) {
@@ -205,12 +261,21 @@ export class GameUI {
                 const deltaX = this.dragStartX - x;
                 this.ingredientScrollX = this.dragStartScrollX + deltaX;
             }
+            else if (this.isDraggingSettings) {
+                const rect = this.canvas.getBoundingClientRect();
+                const y = e.clientY - rect.top;
+                const deltaY = this.settingsDragStartY - y;
+                this.settingsScrollOffset = this.settingsDragStartScrollOffset + deltaY;
+                // Clamp se hace en renderSettingsContent
+            }
         });
         this.canvas.addEventListener('mouseup', () => {
             this.isDraggingIngredients = false;
+            this.isDraggingSettings = false;
         });
         this.canvas.addEventListener('mouseleave', () => {
             this.isDraggingIngredients = false;
+            this.isDraggingSettings = false;
         });
         this.canvas.addEventListener('touchstart', (e) => {
             const rect = this.canvas.getBoundingClientRect();
@@ -231,6 +296,21 @@ export class GameUI {
                     e.preventDefault();
                 }
             }
+            else if (this.currentMenu === 'settings') {
+                const panelHeight = 500;
+                const panelY = this.canvas.height - panelHeight * this.menuAnimationProgress;
+                const headerHeight = 50;
+                const closeBarHeight = 40;
+                const contentY = panelY + headerHeight;
+                const contentHeight = panelHeight - headerHeight - closeBarHeight;
+                // Solo permitir drag en el área de contenido (no en header ni en barra de cierre)
+                if (y >= contentY && y <= contentY + contentHeight) {
+                    this.isDraggingSettings = true;
+                    this.settingsDragStartY = y;
+                    this.settingsDragStartScrollOffset = this.settingsScrollOffset;
+                    e.preventDefault();
+                }
+            }
         });
         this.canvas.addEventListener('touchmove', (e) => {
             if (this.isDraggingIngredients) {
@@ -241,9 +321,18 @@ export class GameUI {
                 this.ingredientScrollX = this.dragStartScrollX + deltaX;
                 e.preventDefault();
             }
+            else if (this.isDraggingSettings) {
+                const rect = this.canvas.getBoundingClientRect();
+                const touch = e.touches[0];
+                const y = touch.clientY - rect.top;
+                const deltaY = this.settingsDragStartY - y;
+                this.settingsScrollOffset = this.settingsDragStartScrollOffset + deltaY;
+                e.preventDefault();
+            }
         });
         this.canvas.addEventListener('touchend', () => {
             this.isDraggingIngredients = false;
+            this.isDraggingSettings = false;
         });
     }
     openMenu(menu) {
@@ -251,6 +340,14 @@ export class GameUI {
         this.menuAnimationStartTime = Date.now();
         this.menuAnimationProgress = 0;
         this.isMenuClosing = false;
+        // Si abrimos el menú de comida y no hay nada seleccionado, seleccionar neutral por defecto
+        if (menu === 'feed' && this.selectedIngredient === null) {
+            this.selectedIngredient = 'neutral';
+        }
+        // Resetear scroll de settings al abrir
+        if (menu === 'settings') {
+            this.settingsScrollOffset = 0;
+        }
     }
     closeMenu() {
         if (this.currentMenu && !this.isMenuClosing) {
@@ -260,6 +357,82 @@ export class GameUI {
         }
     }
     handleClick(x, y) {
+        // PRIORIDAD 1: Settings panel (si está abierto)
+        if (this.currentMenu === 'settings') {
+            // Verificar si click en barra de volver (TODA la barra horizontal, no solo la flecha)
+            const panelHeight = 500;
+            const closeBarHeight = 40;
+            const panelY = this.canvas.height - panelHeight * this.menuAnimationProgress;
+            const closeBarY = panelY + panelHeight - closeBarHeight;
+            // Área clickeable: TODA la barra horizontal (ancho completo del canvas)
+            if (y >= closeBarY && y <= closeBarY + closeBarHeight) {
+                // Click en barra de volver: cerrar panel
+                this.closeMenu();
+                return;
+            }
+            // Si no es en la flecha, delegar a SettingsUI
+            const consumed = this.settingsUI.handleClick(x, y);
+            if (!consumed) {
+                // Si SettingsUI no consume el click (click fuera del panel), cerrar
+                this.closeMenu();
+            }
+            return;
+        }
+        // PRIORIDAD 2: Pantalla de sleep
+        if (this.settings.sleep.isSleeping) {
+            // Click en botón despertar (izquierda, misma posición que mimir)
+            const wakeButton = this.settingsCache.get('Boton despertar.png');
+            const wakeX = 15;
+            const wakeY = this.canvas.height * 0.35;
+            // Calcular tamaño con aspect ratio mantenido
+            let wakeW = 55;
+            let wakeH = 55;
+            if (wakeButton && wakeButton.complete) {
+                const spriteAspect = wakeButton.width / wakeButton.height;
+                wakeH = 55;
+                wakeW = wakeH * spriteAspect;
+            }
+            if (x >= wakeX && x <= wakeX + wakeW &&
+                y >= wakeY && y <= wakeY + wakeH) {
+                this.settings.sleep.wakeUp();
+                console.log('[Settings] Pet woken up');
+                // Si está en modo automático, mostrar aviso de que se volverá a dormir
+                if (this.settings.sleep.isAutomatic) {
+                    this.showFeedback('wake_auto_warning');
+                }
+            }
+            return;
+        }
+        // PRIORIDAD 3: Botones especiales en main room
+        // Botón Settings (arriba a la derecha)
+        const settingsX = this.canvas.width - 70;
+        const settingsY = 20;
+        const settingsSize = 50;
+        if (x >= settingsX && x <= settingsX + settingsSize &&
+            y >= settingsY && y <= settingsY + settingsSize) {
+            this.openMenu('settings');
+            return;
+        }
+        // Botón Mimir (izquierda, más arriba, solo en modo manual)
+        if (this.settings.sleep.isManual && !this.settings.sleep.isSleeping) {
+            const mimirButton = this.settingsCache.get('Boton mimir.png');
+            const mimirX = 15;
+            const mimirY = this.canvas.height * 0.35;
+            // Calcular tamaño con aspect ratio mantenido
+            let mimirW = 55;
+            let mimirH = 55;
+            if (mimirButton && mimirButton.complete) {
+                const spriteAspect = mimirButton.width / mimirButton.height;
+                mimirH = 55;
+                mimirW = mimirH * spriteAspect;
+            }
+            if (x >= mimirX && x <= mimirX + mimirW &&
+                y >= mimirY && y <= mimirY + mimirH) {
+                this.settings.sleep.sleep();
+                console.log('[Settings] Pet went to sleep (manual mode)');
+                return;
+            }
+        }
         // Tap en el huevo
         if (this.pet.stage === LifeStage.Egg) {
             if (this.onTapEgg) {
@@ -293,9 +466,9 @@ export class GameUI {
             // Click en pestañas
             const tabsY = panelY - tabHeight;
             if (y >= tabsY && y < panelY) {
-                const tabWidth = this.canvas.width / 3;
+                const tabs = ['feed', 'play', 'room', 'settings'];
+                const tabWidth = this.canvas.width / tabs.length;
                 const tabIndex = Math.floor(x / tabWidth);
-                const tabs = ['feed', 'play', 'room'];
                 if (tabIndex >= 0 && tabIndex < tabs.length) {
                     // Solo cambiar el menú actual, sin reiniciar la animación
                     this.currentMenu = tabs[tabIndex];
@@ -367,11 +540,23 @@ export class GameUI {
                     return;
                 }
                 // Cocinar mochi solo si hay ingrediente seleccionado
-                if (this.selectedIngredient && this.onFeedWithIngredient) {
-                    console.log('[UI] Cocinar mochi con ingrediente:', this.selectedIngredient);
-                    this.onFeedWithIngredient(this.selectedIngredient);
-                    this.selectedIngredient = null; // Limpiar selección
-                    this.closeMenu(); // Cerrar menú
+                if (this.selectedIngredient && this.onStartCookingMinigame) {
+                    console.log('[UI] Iniciando minijuego de cocinar mochi con ingrediente:', this.selectedIngredient);
+                    // Obtener el tier del ingrediente
+                    let tier = 1;
+                    if (this.selectedIngredient === 'neutral') {
+                        tier = 1;
+                    }
+                    else {
+                        const inventory = this.pet.inventory.getAll();
+                        const item = inventory.find(i => i.ingredient.identifier === this.selectedIngredient);
+                        if (item) {
+                            tier = item.ingredient.tier;
+                        }
+                    }
+                    const ingredientToUse = this.selectedIngredient;
+                    this.closeMenu(); // Cerrar menú ANTES de lanzar
+                    this.onStartCookingMinigame(ingredientToUse, tier);
                 }
                 return;
             }
@@ -401,13 +586,11 @@ export class GameUI {
                 if (x >= cellX && x <= cellX + cellSize &&
                     y >= cellY && y <= cellY + cellSize) {
                     const ingId = item.ingredient.identifier;
-                    if (this.selectedIngredient === ingId) {
-                        this.selectedIngredient = null;
-                    }
-                    else {
+                    // No permitir deseleccionar - siempre debe haber algo seleccionado
+                    if (this.selectedIngredient !== ingId) {
                         this.selectedIngredient = ingId;
+                        console.log('[UI] Ingrediente seleccionado:', this.selectedIngredient);
                     }
-                    console.log('[UI] Ingrediente seleccionado:', this.selectedIngredient);
                     return true;
                 }
                 return false;
@@ -450,6 +633,12 @@ export class GameUI {
                 if (this.pet.illness.isCurrentlyIll()) {
                     this.closeMenu();
                     this.showFeedback('refuse_play_sick');
+                    return;
+                }
+                // Verificar si tiene hambre antes de jugar
+                if (this.pet.hunger.isHungry()) {
+                    this.closeMenu();
+                    this.showFeedback('refuse_play_hungry');
                     return;
                 }
                 // Jugar el minijuego seleccionado
@@ -519,6 +708,7 @@ export class GameUI {
                 }
             });
         }
+        // Settings se maneja al inicio de handleClick()
     }
     // Mostrar feedback temporal
     showFeedback(type) {
@@ -562,7 +752,20 @@ export class GameUI {
         this.updateMenuAnimation();
         // Si hay un minijuego activo, SOLO renderizar el minijuego (oculta el main room)
         if (this.activeMinigame) {
-            this.activeMinigame.render();
+            const minigame = this.activeMinigame; // Guardar referencia antes de update
+            // Update minigame logic
+            if ('update' in minigame) {
+                minigame.update(1 / 60); // Aproximadamente 60 FPS
+            }
+            // Verificar que el minigame sigue activo después del update
+            if (this.activeMinigame) {
+                this.activeMinigame.render();
+            }
+            return; // No renderizar nada más
+        }
+        // Si está durmiendo, mostrar pantalla de sleep
+        if (this.settings.sleep.isSleeping) {
+            this.renderSleepScreen();
             return; // No renderizar nada más
         }
         // Renderizar interfaz principal (main room)
@@ -578,10 +781,14 @@ export class GameUI {
         this.renderActionButtons();
         // Renderizar debug panel
         this.renderDebugPanel();
+        // Renderizar botón de settings DESPUÉS del debug (para que esté encima)
+        this.renderSettingsButton();
+        // Renderizar botón mimir (solo en modo manual)
+        this.renderMimirButton();
         // Renderizar estados
         this.renderStateIndicators();
-        // Renderizar caca si existe
-        if (this.pet.poop.hasPoopedNow()) {
+        // Renderizar caca si existe (solo si NO está muerto)
+        if (this.pet.poop.hasPoopedNow() && this.pet.stage !== LifeStage.Dead) {
             this.renderPoop();
         }
         // Renderizar feedback si existe
@@ -596,6 +803,11 @@ export class GameUI {
         if (this.showingRewards && this.minigameRewards) {
             this.minigameRewards.render();
         }
+        // Renderizar recompensas de alimentación SOBRE el main room (si se están mostrando)
+        if (this.showingFeedingRewards) {
+            this.feedingRewards.render();
+        }
+        // Los popups de settings ahora se renderizan dentro de SettingsUI
     }
     renderRoom() {
         this.ctx.save();
@@ -998,6 +1210,59 @@ export class GameUI {
             this.ctx.strokeRect(x, y, buttonWidth, buttonHeight);
         });
     }
+    renderSettingsButton() {
+        // Botón Settings (arriba a la derecha)
+        const settingsButton = this.settingsCache.get('SettingsOpenButton.png');
+        const settingsX = this.canvas.width - 70;
+        const settingsY = 20;
+        const settingsSize = 50;
+        if (settingsButton && settingsButton.complete) {
+            this.ctx.drawImage(settingsButton, settingsX, settingsY, settingsSize, settingsSize);
+        }
+        else {
+            // Fallback: círculo con emoji
+            this.ctx.fillStyle = '#fff';
+            this.ctx.beginPath();
+            this.ctx.arc(settingsX + settingsSize / 2, settingsY + settingsSize / 2, settingsSize / 2, 0, Math.PI * 2);
+            this.ctx.fill();
+            this.ctx.strokeStyle = '#000';
+            this.ctx.lineWidth = 2;
+            this.ctx.stroke();
+            this.ctx.font = '30px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.fillStyle = '#000';
+            this.ctx.fillText('⚙️', settingsX + settingsSize / 2, settingsY + settingsSize / 2 + 10);
+        }
+    }
+    renderMimirButton() {
+        // Botón Mimir (solo en modo manual cuando está despierto)
+        if (this.settings.sleep.isManual && !this.settings.sleep.isSleeping) {
+            const mimirButton = this.settingsCache.get('Boton mimir.png');
+            // Posición izquierda, más arriba (~35% desde el tope)
+            const mimirX = 15;
+            const mimirY = this.canvas.height * 0.35;
+            if (mimirButton && mimirButton.complete) {
+                // Mantener aspect ratio
+                const spriteAspect = mimirButton.width / mimirButton.height;
+                const targetHeight = 55;
+                const targetWidth = targetHeight * spriteAspect;
+                this.ctx.drawImage(mimirButton, mimirX, mimirY, targetWidth, targetHeight);
+            }
+            else {
+                // Fallback
+                const mimirSize = 55;
+                this.ctx.fillStyle = '#fff';
+                this.ctx.fillRect(mimirX, mimirY, mimirSize, mimirSize);
+                this.ctx.strokeStyle = '#000';
+                this.ctx.lineWidth = 2;
+                this.ctx.strokeRect(mimirX, mimirY, mimirSize, mimirSize);
+                this.ctx.font = '35px Arial';
+                this.ctx.textAlign = 'center';
+                this.ctx.fillStyle = '#000';
+                this.ctx.fillText('😴', mimirX + mimirSize / 2, mimirY + mimirSize / 2 + 12);
+            }
+        }
+    }
     renderDebugPanel() {
         this.ctx.save();
         const x = this.canvas.width - 180;
@@ -1126,10 +1391,10 @@ export class GameUI {
             this.ctx.fillStyle = '#000';
             this.ctx.fillText('🤒', bubbleX + 35, bubbleY + bubbleHeight / 2);
             // Texto
-            this.ctx.font = 'bold 15px Arial';
+            this.ctx.font = 'bold 16px Arial';
             this.ctx.fillStyle = '#000';
-            this.ctx.fillText('No quiero', bubbleX + 95, bubbleY + 23);
-            this.ctx.fillText('comer', bubbleX + 95, bubbleY + 47);
+            this.ctx.fillText('¡Estoy', bubbleX + 95, bubbleY + 23);
+            this.ctx.fillText('enfermo!', bubbleX + 95, bubbleY + 47);
         }
         else if (this.feedbackType === 'refuse_play_sick') {
             // Icono de enfermo - negro
@@ -1137,10 +1402,33 @@ export class GameUI {
             this.ctx.fillStyle = '#000';
             this.ctx.fillText('🤒', bubbleX + 35, bubbleY + bubbleHeight / 2);
             // Texto
-            this.ctx.font = 'bold 15px Arial';
+            this.ctx.font = 'bold 16px Arial';
             this.ctx.fillStyle = '#000';
-            this.ctx.fillText('No quiero', bubbleX + 95, bubbleY + 23);
-            this.ctx.fillText('jugar', bubbleX + 95, bubbleY + 47);
+            this.ctx.fillText('¡Estoy', bubbleX + 95, bubbleY + 23);
+            this.ctx.fillText('enfermo!', bubbleX + 95, bubbleY + 47);
+        }
+        else if (this.feedbackType === 'refuse_play_hungry') {
+            // Icono de hambre - negro
+            this.ctx.font = 'bold 35px Arial';
+            this.ctx.fillStyle = '#000';
+            this.ctx.fillText('😋', bubbleX + 35, bubbleY + bubbleHeight / 2);
+            // Texto
+            this.ctx.font = 'bold 16px Arial';
+            this.ctx.fillStyle = '#000';
+            this.ctx.fillText('¡Tengo', bubbleX + 95, bubbleY + 23);
+            this.ctx.fillText('hambre!', bubbleX + 95, bubbleY + 47);
+        }
+        else if (this.feedbackType === 'wake_auto_warning') {
+            // Icono de sueño - negro
+            this.ctx.font = 'bold 30px Arial';
+            this.ctx.fillStyle = '#000';
+            this.ctx.fillText('😴', bubbleX + 30, bubbleY + bubbleHeight / 2);
+            // Texto (3 líneas para que quepa)
+            this.ctx.font = 'bold 13px Arial';
+            this.ctx.fillStyle = '#000';
+            this.ctx.fillText('Me iré a', bubbleX + 95, bubbleY + 18);
+            this.ctx.fillText('mimir si no', bubbleX + 95, bubbleY + 35);
+            this.ctx.fillText('me haces caso', bubbleX + 95, bubbleY + 52);
         }
         this.ctx.restore();
     }
@@ -1148,83 +1436,87 @@ export class GameUI {
         if (!this.currentMenu)
             return;
         this.ctx.save();
-        const panelHeight = 310; // Solo 2 filas de ingredientes
-        const tabHeight = 50;
+        // Settings tiene panel más grande sin tabs
+        const isSettings = this.currentMenu === 'settings';
+        const panelHeight = isSettings ? 500 : 310; // Settings: panel grande, otros: pequeño
+        const tabHeight = isSettings ? 0 : 50; // Settings: sin tabs
         const panelY = this.canvas.height - panelHeight * this.menuAnimationProgress;
         const tabsY = panelY - tabHeight;
         // Overlay oscuro al 50%
         this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
         this.ctx.fillRect(0, 0, this.canvas.width, tabsY);
-        // Pestañas (tabs) en la parte superior
-        const tabs = [
-            { id: 'feed', icon: '🍙', label: 'Alimentar' },
-            { id: 'play', icon: '🎮', label: 'Jugar' },
-            { id: 'room', icon: '🏠', label: 'Decoración' }
-        ];
-        const tabWidth = this.canvas.width / tabs.length;
-        tabs.forEach((tab, index) => {
-            const tabX = index * tabWidth;
-            const isActive = tab.id === this.currentMenu;
-            // Fondo de la pestaña (efecto carpeta)
-            if (isActive) {
-                // Pestaña activa: fondo blanco
-                this.ctx.fillStyle = '#fff';
-                this.ctx.beginPath();
-                this.ctx.moveTo(tabX + 5, tabsY + tabHeight);
-                this.ctx.lineTo(tabX + 5, tabsY + 10);
-                this.ctx.quadraticCurveTo(tabX + 5, tabsY, tabX + 15, tabsY);
-                this.ctx.lineTo(tabX + tabWidth - 15, tabsY);
-                this.ctx.quadraticCurveTo(tabX + tabWidth - 5, tabsY, tabX + tabWidth - 5, tabsY + 10);
-                this.ctx.lineTo(tabX + tabWidth - 5, tabsY + tabHeight);
-                this.ctx.fill();
-                // Borde negro
-                this.ctx.strokeStyle = '#000';
-                this.ctx.lineWidth = 2;
-                this.ctx.beginPath();
-                this.ctx.moveTo(tabX + 5, tabsY + tabHeight);
-                this.ctx.lineTo(tabX + 5, tabsY + 10);
-                this.ctx.quadraticCurveTo(tabX + 5, tabsY, tabX + 15, tabsY);
-                this.ctx.lineTo(tabX + tabWidth - 15, tabsY);
-                this.ctx.quadraticCurveTo(tabX + tabWidth - 5, tabsY, tabX + tabWidth - 5, tabsY + 10);
-                this.ctx.lineTo(tabX + tabWidth - 5, tabsY + tabHeight);
-                this.ctx.stroke();
-            }
-            else {
-                // Pestaña inactiva: fondo negro
-                this.ctx.fillStyle = '#000';
-                this.ctx.fillRect(tabX + 5, tabsY + 5, tabWidth - 10, tabHeight - 5);
-                this.ctx.strokeStyle = '#000';
-                this.ctx.lineWidth = 1;
-                this.ctx.strokeRect(tabX + 5, tabsY + 5, tabWidth - 10, tabHeight - 5);
-            }
-            // Icono y texto
-            this.ctx.font = '20px Arial';
-            this.ctx.textAlign = 'center';
-            const centerX = tabX + tabWidth / 2;
-            const iconY = tabsY + (isActive ? 22 : 27);
-            // Si está inactivo (fondo negro), añadir círculo blanco detrás
-            if (!isActive) {
-                const centerY = tabsY + 20;
-                const radius = 16;
-                // Círculo blanco de fondo
-                this.ctx.fillStyle = '#fff';
-                this.ctx.beginPath();
-                this.ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
-                this.ctx.fill();
-                // Emoji en negro sobre círculo blanco
-                this.ctx.fillStyle = '#000';
-                this.ctx.fillText(tab.icon, centerX, iconY);
-            }
-            else {
-                // Pestaña activa: emoji negro normal
-                this.ctx.fillStyle = '#000';
-                this.ctx.fillText(tab.icon, centerX, iconY);
-            }
-            // Texto del label
-            this.ctx.fillStyle = isActive ? '#000' : '#fff';
-            this.ctx.font = '11px Arial';
-            this.ctx.fillText(tab.label, centerX, tabsY + (isActive ? 40 : 45));
-        });
+        // Tabs solo para feed/play/room (settings NO tiene tabs)
+        if (!isSettings) {
+            const tabs = [
+                { id: 'feed', icon: '🍙', label: 'Alimentar' },
+                { id: 'play', icon: '🎮', label: 'Jugar' },
+                { id: 'room', icon: '🏠', label: 'Decoración' }
+            ];
+            const tabWidth = this.canvas.width / tabs.length;
+            tabs.forEach((tab, index) => {
+                const tabX = index * tabWidth;
+                const isActive = tab.id === this.currentMenu;
+                // Fondo de la pestaña (efecto carpeta)
+                if (isActive) {
+                    // Pestaña activa: fondo blanco
+                    this.ctx.fillStyle = '#fff';
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(tabX + 5, tabsY + tabHeight);
+                    this.ctx.lineTo(tabX + 5, tabsY + 10);
+                    this.ctx.quadraticCurveTo(tabX + 5, tabsY, tabX + 15, tabsY);
+                    this.ctx.lineTo(tabX + tabWidth - 15, tabsY);
+                    this.ctx.quadraticCurveTo(tabX + tabWidth - 5, tabsY, tabX + tabWidth - 5, tabsY + 10);
+                    this.ctx.lineTo(tabX + tabWidth - 5, tabsY + tabHeight);
+                    this.ctx.fill();
+                    // Borde negro
+                    this.ctx.strokeStyle = '#000';
+                    this.ctx.lineWidth = 2;
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(tabX + 5, tabsY + tabHeight);
+                    this.ctx.lineTo(tabX + 5, tabsY + 10);
+                    this.ctx.quadraticCurveTo(tabX + 5, tabsY, tabX + 15, tabsY);
+                    this.ctx.lineTo(tabX + tabWidth - 15, tabsY);
+                    this.ctx.quadraticCurveTo(tabX + tabWidth - 5, tabsY, tabX + tabWidth - 5, tabsY + 10);
+                    this.ctx.lineTo(tabX + tabWidth - 5, tabsY + tabHeight);
+                    this.ctx.stroke();
+                }
+                else {
+                    // Pestaña inactiva: fondo negro
+                    this.ctx.fillStyle = '#000';
+                    this.ctx.fillRect(tabX + 5, tabsY + 5, tabWidth - 10, tabHeight - 5);
+                    this.ctx.strokeStyle = '#000';
+                    this.ctx.lineWidth = 1;
+                    this.ctx.strokeRect(tabX + 5, tabsY + 5, tabWidth - 10, tabHeight - 5);
+                }
+                // Icono y texto
+                this.ctx.font = '20px Arial';
+                this.ctx.textAlign = 'center';
+                const centerX = tabX + tabWidth / 2;
+                const iconY = tabsY + (isActive ? 22 : 27);
+                // Si está inactivo (fondo negro), añadir círculo blanco detrás
+                if (!isActive) {
+                    const centerY = tabsY + 20;
+                    const radius = 16;
+                    // Círculo blanco de fondo
+                    this.ctx.fillStyle = '#fff';
+                    this.ctx.beginPath();
+                    this.ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    // Emoji en negro sobre círculo blanco
+                    this.ctx.fillStyle = '#000';
+                    this.ctx.fillText(tab.icon, centerX, iconY);
+                }
+                else {
+                    // Pestaña activa: emoji negro normal
+                    this.ctx.fillStyle = '#000';
+                    this.ctx.fillText(tab.icon, centerX, iconY);
+                }
+                // Texto del label
+                this.ctx.fillStyle = isActive ? '#000' : '#fff';
+                this.ctx.font = '11px Arial';
+                this.ctx.fillText(tab.label, centerX, tabsY + (isActive ? 40 : 45));
+            });
+        } // Fin de if (!isSettings)
         // Panel blanco desplegable
         this.ctx.fillStyle = '#fff';
         this.ctx.fillRect(0, panelY, this.canvas.width, panelHeight);
@@ -1236,17 +1528,75 @@ export class GameUI {
         this.ctx.lineTo(this.canvas.width, panelY);
         this.ctx.stroke();
         // Contenido del panel según el menú
-        const contentStartY = panelY + 10;
+        const contentStartY = panelY;
         if (this.currentMenu === 'feed') {
-            this.renderFeedContent(contentStartY);
+            this.renderFeedContent(contentStartY + 10);
         }
         else if (this.currentMenu === 'play') {
-            this.renderPlayContent(contentStartY);
+            this.renderPlayContent(contentStartY + 10);
         }
         else if (this.currentMenu === 'room') {
-            this.renderRoomContent(contentStartY);
+            this.renderRoomContent(contentStartY + 10);
+        }
+        else if (this.currentMenu === 'settings') {
+            this.renderSettingsContent(contentStartY, panelHeight);
         }
         this.ctx.restore();
+    }
+    renderSettingsContent(panelY, panelHeight) {
+        // Header negro "CONFIGURACIONES" pegado a la parte superior del panel
+        const headerHeight = 50;
+        this.ctx.fillStyle = '#000';
+        this.ctx.fillRect(0, panelY, this.canvas.width, headerHeight);
+        this.ctx.fillStyle = '#fff';
+        this.ctx.font = 'bold 20px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.fillText('CONFIGURACIONES', this.canvas.width / 2, panelY + headerHeight / 2 + 7);
+        // Contenido scrolleable (delegado a SettingsUI)
+        const closeBarHeight = 40;
+        const contentX = 15;
+        const contentY = panelY + headerHeight + 15;
+        const contentW = this.canvas.width - 30;
+        const availableHeight = panelHeight - headerHeight - closeBarHeight - 15;
+        // Informar a SettingsUI de los bounds del panel para click handling
+        this.settingsUI.setPanelBounds(0, panelY, this.canvas.width, panelHeight);
+        // Calcular altura total del contenido para determinar scroll máximo
+        const totalContentHeight = this.settingsUI.calculateContentHeight(contentW);
+        this.settingsMaxScroll = Math.max(0, totalContentHeight - availableHeight);
+        // Clamp scroll offset
+        this.settingsScrollOffset = Math.max(0, Math.min(this.settingsScrollOffset, this.settingsMaxScroll));
+        // Renderizar contenido con scroll offset
+        this.settingsUI.renderContent(contentX, contentY, contentW, availableHeight, this.settingsScrollOffset);
+        // Botón de volver (flecha sprite) en la parte inferior (FUERA del clipping, siempre visible)
+        const closeBarY = panelY + panelHeight - closeBarHeight;
+        // Borde negro alrededor de toda la barra horizontal
+        this.ctx.strokeStyle = '#000';
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeRect(0, closeBarY, this.canvas.width, closeBarHeight);
+        // Cargar sprite de la flecha
+        const backSprite = this.settingsUI.getSprite('Back.png');
+        if (backSprite && backSprite.complete) {
+            // Mantener aspect ratio
+            const spriteAspect = backSprite.width / backSprite.height;
+            const targetHeight = 35; // Altura deseada
+            const targetWidth = targetHeight * spriteAspect;
+            const arrowX = (this.canvas.width - targetWidth) / 2;
+            const arrowY = closeBarY + (closeBarHeight - targetHeight) / 2;
+            this.ctx.drawImage(backSprite, arrowX, arrowY, targetWidth, targetHeight);
+        }
+        else {
+            // Fallback: emoji
+            this.ctx.fillStyle = '#000';
+            this.ctx.font = 'bold 30px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+            this.ctx.fillText('←', this.canvas.width / 2, closeBarY + closeBarHeight / 2);
+        }
+    }
+    // ============ SETTINGS PANEL (diseño Figma) ============
+    renderSettingsPanel() {
+        // Delegar todo el rendering a SettingsUI
+        this.settingsUI.render();
     }
     renderFeedContent(startY) {
         const inventory = this.pet.inventory.getAll();
@@ -1678,6 +2028,13 @@ export class GameUI {
         });
     }
     // Métodos para minijuegos
+    launchCookingMinigame(ingredientId, tier) {
+        console.log(`[GameUI] Launching cooking minigame with ingredient ${ingredientId} (tier ${tier})`);
+        this.activeMinigame = new MochiCookingUI(this.canvas, this.pet, tier, ingredientId);
+        this.activeMinigame.onGameEnd = (success) => {
+            this.handleCookingMinigameEnd(ingredientId, success);
+        };
+    }
     launchMinigame(minigameId, personality) {
         if (minigameId === 'theButton') {
             this.activeMinigame = new TheButtonUI(this.canvas, this.pet);
@@ -1697,7 +2054,10 @@ export class GameUI {
         }
         else if (minigameId === 'higherOrLower') {
             this.activeMinigame = new GuessTheHigherUI(this.canvas, this.pet);
-            this.activeMinigame.setPetSprite(this.getSpriteForPet());
+            const petSprite = this.getSpriteForPet();
+            if (petSprite) {
+                this.activeMinigame.setPetSprite(petSprite);
+            }
             this.activeMinigame.onGameEnd = (scorePercentage) => {
                 this.handleMinigameEnd(scorePercentage, personality);
             };
@@ -1705,6 +2065,14 @@ export class GameUI {
         }
         else if (minigameId === 'simonDice') {
             this.activeMinigame = new SimonDiceUI(this.canvas, this.pet);
+            this.activeMinigame.setPetSprite(this.getSpriteForPet());
+            this.activeMinigame.onGameEnd = (scorePercentage) => {
+                this.handleMinigameEnd(scorePercentage, personality);
+            };
+            this.minigameRewards = new TheButtonRewards(this.canvas, this.ingredientCache);
+        }
+        else if (minigameId === 'parachute') {
+            this.activeMinigame = new ParachuteUI(this.canvas, this.pet);
             this.activeMinigame.setPetSprite(this.getSpriteForPet());
             this.activeMinigame.onGameEnd = (scorePercentage) => {
                 this.handleMinigameEnd(scorePercentage, personality);
@@ -1736,8 +2104,120 @@ export class GameUI {
         // Limpiar estado de recompensas
         this.showingRewards = false;
         this.minigameRewards = null;
+        // Mostrar recuerdo flotante
+        await this.showMinigameMemory(personality);
+    }
+    async showMinigameMemory(personality) {
+        const personalityName = personality.charAt(0).toUpperCase() + personality.slice(1);
+        const memoryText = `Recuerdo: Minijuego ${personalityName}`;
+        this.showingFeedingRewards = true;
+        this.feedingRewards.onComplete = () => {
+            this.showingFeedingRewards = false;
+        };
+        // Show only memory text (no stars)
+        await this.feedingRewards.showMemoryOnly(memoryText);
+    }
+    handleCookingMinigameEnd(ingredientId, success) {
+        // Cerrar el minijuego primero (para volver al main room)
+        this.activeMinigame = null;
+        console.log(`[GameUI] Cooking minigame ${success ? 'SUCCESS' : 'FAILED'} with ingredient: ${ingredientId}`);
+        // Obtener el ingrediente
+        let ingredient = null;
+        if (ingredientId === 'neutral') {
+            ingredient = Ingredient.createNeutral();
+        }
+        else {
+            const inventory = this.pet.inventory.getAll();
+            const item = inventory.find(i => i.ingredient.identifier === ingredientId);
+            if (item) {
+                ingredient = item.ingredient;
+            }
+        }
+        if (!ingredient) {
+            console.error('[GameUI] Ingredient not found!');
+            return;
+        }
+        if (success) {
+            // Victoria: Alimentar al pet con el ingrediente
+            const result = this.pet.feedWithIngredient(ingredient);
+            if (result.success) {
+                console.log(`[GameUI] Pet fed successfully with ${ingredient.name}`);
+                this.showFeedback('eat');
+                // Mostrar estrellas y recuerdo flotantes
+                this.showFeedingRewards(ingredient);
+            }
+            else if (result.reason === 'full') {
+                console.log('[GameUI] Pet is full and refused food!');
+                this.showFeedback('refuse_food');
+            }
+        }
+        else {
+            // Derrota: Consumir el ingrediente sin alimentar (se pierde)
+            if (ingredientId !== 'neutral') {
+                this.pet.inventory.consume(ingredientId);
+                console.log(`[GameUI] Ingredient ${ingredient.name} lost due to cooking failure`);
+            }
+        }
+        // Resetear selección de ingrediente
+        this.selectedIngredient = 'neutral';
+    }
+    async showFeedingRewards(ingredient) {
+        // Generar texto del recuerdo si no es neutral
+        let memoryText = undefined;
+        if (ingredient.personality !== 'neutral') {
+            const personalityName = ingredient.personality.charAt(0).toUpperCase() + ingredient.personality.slice(1);
+            memoryText = `Recuerdo: Comida ${personalityName}`;
+        }
+        this.showingFeedingRewards = true;
+        // Setup onComplete callback
+        this.feedingRewards.onComplete = () => {
+            this.showingFeedingRewards = false;
+        };
+        // Show rewards
+        await this.feedingRewards.show(ingredient, memoryText);
     }
     setTimeMultiplier(multiplier) {
         this.timeMultiplier = multiplier;
+    }
+    renderSleepScreen() {
+        this.ctx.save();
+        // Fondo negro
+        this.ctx.fillStyle = '#000';
+        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        // 3 Z's (pequeña, mediana, grande)
+        const zSprite = this.settingsCache.get('Z.png');
+        if (zSprite && zSprite.complete) {
+            // Z pequeña (abajo izquierda)
+            this.ctx.drawImage(zSprite, 150, 350, 50, 50);
+            // Z mediana
+            this.ctx.drawImage(zSprite, 190, 280, 70, 70);
+            // Z grande (arriba derecha)
+            this.ctx.drawImage(zSprite, 240, 200, 90, 90);
+        }
+        // Botón despertar (izquierda, misma posición que mimir)
+        const wakeButton = this.settingsCache.get('Boton despertar.png');
+        const wakeX = 15;
+        const wakeY = this.canvas.height * 0.35;
+        if (wakeButton && wakeButton.complete) {
+            // Mantener aspect ratio
+            const spriteAspect = wakeButton.width / wakeButton.height;
+            const targetHeight = 55;
+            const targetWidth = targetHeight * spriteAspect;
+            this.ctx.drawImage(wakeButton, wakeX, wakeY, targetWidth, targetHeight);
+        }
+        else {
+            // Fallback
+            const wakeSize = 55;
+            this.ctx.fillStyle = '#fff';
+            this.ctx.fillRect(wakeX, wakeY, wakeSize, wakeSize);
+            this.ctx.strokeStyle = '#000';
+            this.ctx.lineWidth = 2;
+            this.ctx.strokeRect(wakeX, wakeY, wakeSize, wakeSize);
+            this.ctx.font = '30px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.fillStyle = '#000';
+            this.ctx.fillText('💡', wakeX + wakeSize / 2, wakeY + wakeSize / 2 + 10);
+        }
+        this.ctx.restore();
     }
 }

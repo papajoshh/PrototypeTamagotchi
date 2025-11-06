@@ -2,6 +2,7 @@ export type NotificationType =
   | 'attention_low'      // 1 estrella en hambre o aburrimiento
   | 'attention_critical' // 0 estrellas en hambre o aburrimiento
   | 'illness'            // Criatura enferma
+  | 'poop'               // Criatura hizo caca
   | 'near_death'         // A punto de morir
   | 'death'              // Criatura muerta
   | 'evolution';         // Va a evolucionar
@@ -38,6 +39,12 @@ export class NotificationSystem {
       message: 'Necesita medicina urgentemente',
       soundFrequency: 523, // Do (C5)
       soundDuration: 300,
+    },
+    poop: {
+      title: '💩 ¡Tu mascota hizo caca!',
+      message: 'Límpiala antes de que se enferme',
+      soundFrequency: 392, // Sol (G4)
+      soundDuration: 250,
     },
     near_death: {
       title: '💔 ¡Peligro crítico!',

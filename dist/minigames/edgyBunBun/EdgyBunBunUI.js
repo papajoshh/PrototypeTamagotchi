@@ -8,6 +8,8 @@ export class EdgyBunBunUI {
         this.platformSprite = null;
         this.stunPlatformSprite = null;
         this.softPlatformSprite = null;
+        this.timesUpBackgroundSprite = null;
+        this.timesUpLetterSprite = null;
         // Animación de transición
         this.transitionStartTime = 0;
         this.TRANSITION_DURATION = 2000; // 2 segundos
@@ -17,6 +19,7 @@ export class EdgyBunBunUI {
         this.isJumping = false;
         this.isFalling = false;
         this.stunTimer = 0;
+        this.gameOverStartTime = 0;
         // Posiciones para animación
         this.previousY = 0;
         this.previousX = 'left';
@@ -42,6 +45,11 @@ export class EdgyBunBunUI {
         // Huevo para transición
         this.eggSprite = new Image();
         this.eggSprite.src = '/assets/minigames/egg.png';
+        // Times Up animation
+        this.timesUpBackgroundSprite = new Image();
+        this.timesUpBackgroundSprite.src = '/assets/minigames/TimesUp_Background.png';
+        this.timesUpLetterSprite = new Image();
+        this.timesUpLetterSprite.src = '/assets/minigames/TIMES UP_letter.png';
     }
     setupEventListeners() {
         // Click/tap en mitades de la pantalla
@@ -530,75 +538,112 @@ export class EdgyBunBunUI {
     }
     renderFinishedScreen(state) {
         this.ctx.save();
-        // Fondo con overlay (igual que TheButton)
-        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+        // Fondo blanco completo (animación Times Up)
+        this.ctx.fillStyle = '#fff';
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-        // Panel central (igual que TheButton)
-        const panelX = 40;
-        const panelY = 150;
-        const panelW = 400;
-        const panelH = 300;
-        this.ctx.fillStyle = '#fff';
-        this.ctx.fillRect(panelX, panelY, panelW, panelH);
-        this.ctx.strokeStyle = '#000';
-        this.ctx.lineWidth = 3;
-        this.ctx.strokeRect(panelX, panelY, panelW, panelH);
-        // "TIME'S UP"
-        this.ctx.fillStyle = '#000';
-        this.ctx.font = 'bold 40px Arial';
-        this.ctx.textAlign = 'center';
-        this.ctx.fillText("TIME'S UP", this.canvas.width / 2, panelY + 60);
-        // Score final (altura)
-        this.ctx.font = 'bold 48px Arial';
-        this.ctx.fillText(`${state.score}`, this.canvas.width / 2, panelY + 130);
-        // Calcular premios según porcentaje
-        const maxExpectedScore = 85;
-        const scorePercentage = Math.min((state.score / maxExpectedScore) * 100, 100);
-        // Calcular recompensas (mismo sistema que TheButton)
-        const rewards = {
-            tier1: 0,
-            tier2: 0,
-            tier3: 0
-        };
-        if (scorePercentage < 30) {
-            rewards.tier1 = 1; // Básico
+        // ============ Animación Times Up ============
+        const elapsed = Date.now() - (this.gameOverStartTime || Date.now());
+        if (!this.gameOverStartTime) {
+            this.gameOverStartTime = Date.now();
         }
-        else if (scorePercentage < 70) {
-            rewards.tier1 = 1; // Básico
-            rewards.tier2 = 1; // Medio
+        const canvasWidth = this.canvas.width;
+        const centerX = canvasWidth / 2;
+        const centerY = 200;
+        // Background entra desde la izquierda (0.1s)
+        const bgProgress = Math.min(elapsed / 100, 1);
+        const bgX = centerX - canvasWidth * (1 - bgProgress);
+        if (this.timesUpBackgroundSprite && this.timesUpBackgroundSprite.complete) {
+            const bgMaxW = 400;
+            const bgMaxH = 120;
+            const bgAspect = this.timesUpBackgroundSprite.width / this.timesUpBackgroundSprite.height;
+            let bgW = bgMaxW;
+            let bgH = bgMaxH;
+            if (bgAspect > bgMaxW / bgMaxH) {
+                bgH = bgW / bgAspect;
+            }
+            else {
+                bgW = bgH * bgAspect;
+            }
+            this.ctx.drawImage(this.timesUpBackgroundSprite, bgX - bgW / 2, centerY - bgH / 2, bgW, bgH);
         }
-        else {
-            rewards.tier1 = 1; // Básico
-            rewards.tier3 = 1; // Premium
+        // Letter entra desde la derecha con overshoot (0.2s después del bg)
+        if (elapsed >= 100) {
+            const letterElapsed = elapsed - 100;
+            const letterProgress = Math.min(letterElapsed / 200, 1);
+            const easeProgress = letterProgress < 1
+                ? 1 + 1.7 * Math.pow(letterProgress - 1, 3) + Math.pow(letterProgress - 1, 2)
+                : letterProgress;
+            const letterX = centerX + canvasWidth * (1 - easeProgress);
+            if (this.timesUpLetterSprite && this.timesUpLetterSprite.complete) {
+                const letterMaxW = 400;
+                const letterMaxH = 120;
+                const letterAspect = this.timesUpLetterSprite.width / this.timesUpLetterSprite.height;
+                let letterW = letterMaxW;
+                let letterH = letterMaxH;
+                if (letterAspect > letterMaxW / letterMaxH) {
+                    letterH = letterW / letterAspect;
+                }
+                else {
+                    letterW = letterH * letterAspect;
+                }
+                this.ctx.drawImage(this.timesUpLetterSprite, letterX - letterW / 2, centerY - letterH / 2, letterW, letterH);
+            }
         }
-        // Mostrar premios ganados (igual que TheButton)
-        this.ctx.font = 'bold 16px Arial';
-        this.ctx.textAlign = 'left';
-        let rewardY = panelY + 170;
-        const rewardX = panelX + 60;
-        if (rewards.tier1 > 0) {
-            this.ctx.fillText(`⭐ Ingrediente Básico x${rewards.tier1}`, rewardX, rewardY);
-            rewardY += 25;
+        // Score y premios aparecen después de 300ms
+        if (elapsed >= 300) {
+            // Score final (altura)
+            this.ctx.fillStyle = '#000';
+            this.ctx.font = 'bold 48px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.fillText(`${state.score}`, centerX, centerY + 100);
+            // Calcular premios según porcentaje
+            const maxExpectedScore = 85;
+            const scorePercentage = Math.min((state.score / maxExpectedScore) * 100, 100);
+            // Calcular recompensas
+            const rewards = {
+                tier1: 0,
+                tier2: 0,
+                tier3: 0
+            };
+            if (scorePercentage < 30) {
+                rewards.tier1 = 1;
+            }
+            else if (scorePercentage < 70) {
+                rewards.tier1 = 1;
+                rewards.tier2 = 1;
+            }
+            else {
+                rewards.tier1 = 1;
+                rewards.tier3 = 1;
+            }
+            // Mostrar premios ganados (centrados)
+            this.ctx.font = 'bold 16px Arial';
+            this.ctx.textAlign = 'center';
+            let rewardY = centerY + 140;
+            if (rewards.tier1 > 0) {
+                this.ctx.fillText(`⭐ Ingrediente Básico x${rewards.tier1}`, centerX, rewardY);
+                rewardY += 25;
+            }
+            if (rewards.tier2 > 0) {
+                this.ctx.fillText(`⭐⭐ Ingrediente Medio x${rewards.tier2}`, centerX, rewardY);
+                rewardY += 25;
+            }
+            if (rewards.tier3 > 0) {
+                this.ctx.fillText(`⭐⭐⭐ Ingrediente Premium x${rewards.tier3}`, centerX, rewardY);
+                rewardY += 25;
+            }
+            // Botón para continuar (centrado)
+            const buttonX = centerX - 100;
+            const buttonY = centerY + 200;
+            const buttonW = 200;
+            const buttonH = 50;
+            this.ctx.fillStyle = '#000';
+            this.ctx.fillRect(buttonX, buttonY, buttonW, buttonH);
+            this.ctx.fillStyle = '#fff';
+            this.ctx.font = 'bold 20px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.fillText('Ver Recompensas', centerX, buttonY + 33);
         }
-        if (rewards.tier2 > 0) {
-            this.ctx.fillText(`⭐⭐ Ingrediente Medio x${rewards.tier2}`, rewardX, rewardY);
-            rewardY += 25;
-        }
-        if (rewards.tier3 > 0) {
-            this.ctx.fillText(`⭐⭐⭐ Ingrediente Premium x${rewards.tier3}`, rewardX, rewardY);
-            rewardY += 25;
-        }
-        // Botón para continuar (igual que TheButton)
-        const buttonX = this.canvas.width / 2 - 100;
-        const buttonY = panelY + panelH - 80;
-        const buttonW = 200;
-        const buttonH = 50;
-        this.ctx.fillStyle = '#000';
-        this.ctx.fillRect(buttonX, buttonY, buttonW, buttonH);
-        this.ctx.fillStyle = '#fff';
-        this.ctx.font = 'bold 20px Arial';
-        this.ctx.textAlign = 'center';
-        this.ctx.fillText('Ver Recompensas', this.canvas.width / 2, buttonY + 33);
         this.ctx.restore();
     }
     cleanup() {

@@ -1,4 +1,5 @@
 import { NotificationSystem } from './NotificationSystem';
+import { Settings } from './Settings';
 export const TIME_MODES = {
     REAL_TIME: 1, // 1x - Tiempos reales del juego
     FAST: 10, // 10x - Bebé en 6 min
@@ -16,6 +17,7 @@ export class GameLoop {
         this.previousIllness = false;
         this.previousStage = 0;
         this.pet = pet;
+        this.settings = new Settings(); // Carga automáticamente desde localStorage
         this.notifications = new NotificationSystem();
         // Cargar estado guardado
         const savedData = localStorage.getItem('tamagotchi-save');
@@ -47,7 +49,12 @@ export class GameLoop {
             const now = Date.now();
             const deltaTime = ((now - this.lastUpdate) / 1000) * this.timeMultiplier;
             this.lastUpdate = now;
-            this.pet.update(deltaTime);
+            // Update sleep system (verifica si debe estar dormido según hora real)
+            this.settings.sleep.timePass(new Date());
+            // Solo actualizar pet si NO está durmiendo (el tiempo se congela mientras duerme)
+            if (!this.settings.sleep.isSleeping) {
+                this.pet.update(deltaTime);
+            }
             // Detectar cambios y enviar notificaciones
             this.checkNotifications();
             // Notificar actualización
@@ -126,5 +133,8 @@ export class GameLoop {
     }
     getTimeMultiplier() {
         return this.timeMultiplier;
+    }
+    getSettings() {
+        return this.settings;
     }
 }

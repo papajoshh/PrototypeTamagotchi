@@ -294,6 +294,7 @@ export class Pet {
             this.illness.cure();
             this.hunger.reset();
             this.boring.reset();
+            this.poop.reset(); // Limpiar cacas al resucitar
             // Actualizar timers según nueva etapa
             this.hunger.onStageChange(this.stage);
             this.boring.onStageChange(this.stage);

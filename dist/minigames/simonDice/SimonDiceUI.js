@@ -6,10 +6,13 @@ export class SimonDiceUI {
         this.eggSprite = null;
         this.clockSprite = null;
         this.petSprite = null;
-        // Button sprites
-        this.cloudSprite = null;
-        this.starSprite = null;
-        this.panelSprite = null;
+        // Button sprites (black = sequence panel, white = revealed buttons)
+        this.cloudBlackSprite = null;
+        this.starBlackSprite = null;
+        this.panelBlackSprite = null;
+        this.cloudWhiteSprite = null;
+        this.starWhiteSprite = null;
+        this.panelWhiteSprite = null;
         this.buttonBackgroundSprite = null;
         // UI sprites
         this.sequenceBubbleSprite = null;
@@ -24,11 +27,18 @@ export class SimonDiceUI {
         this.shuffleAnimationProgress = 0;
         this.isShuffling = false;
         this.shuffleStartTime = 0;
-        this.SHUFFLE_DURATION = 1000; // 1 segundo de animación
+        this.SHUFFLE_DURATION = 500; // 0.5 segundos de animación
         this.postShuffleTimer = 0;
         this.sequenceDisplayTimer = 0;
+        this.hideIconsTimer = 0;
+        this.HIDE_ICONS_DELAY = 300; // 0.3s después del post-shuffle
         this.errorPauseTimer = 0;
         this.successPauseTimer = 0;
+        this.isShowingError = false;
+        this.isShowingSuccess = false;
+        // Shuffle animation state
+        this.oldButtonPositions = { cloud: 0, star: 1, panel: 2 };
+        this.showAllIcons = false; // Durante shuffle y post-shuffle
         // Button animation state
         this.buttonPressedType = null;
         this.buttonPressStartTime = 0;
@@ -51,13 +61,19 @@ export class SimonDiceUI {
         this.eggSprite.src = '/assets/minigames/egg.png';
         this.clockSprite = new Image();
         this.clockSprite.src = '/assets/minigames/theButton/clock.png';
-        // Button sprites
-        this.cloudSprite = new Image();
-        this.cloudSprite.src = '/assets/minigames/SimonDice/Cloud_black.png';
-        this.starSprite = new Image();
-        this.starSprite.src = '/assets/minigames/SimonDice/Star_black.png';
-        this.panelSprite = new Image();
-        this.panelSprite.src = '/assets/minigames/SimonDice/Panal_black.png';
+        // Button sprites (black for sequence panel, white for revealed buttons)
+        this.cloudBlackSprite = new Image();
+        this.cloudBlackSprite.src = '/assets/minigames/SimonDice/Cloud_black.png';
+        this.starBlackSprite = new Image();
+        this.starBlackSprite.src = '/assets/minigames/SimonDice/Star_black.png';
+        this.panelBlackSprite = new Image();
+        this.panelBlackSprite.src = '/assets/minigames/SimonDice/Panal_black.png';
+        this.cloudWhiteSprite = new Image();
+        this.cloudWhiteSprite.src = '/assets/minigames/SimonDice/Cloud_white.png';
+        this.starWhiteSprite = new Image();
+        this.starWhiteSprite.src = '/assets/minigames/SimonDice/Star_white.png';
+        this.panelWhiteSprite = new Image();
+        this.panelWhiteSprite.src = '/assets/minigames/SimonDice/Panal_white.png';
         this.buttonBackgroundSprite = new Image();
         this.buttonBackgroundSprite.src = '/assets/minigames/SimonDice/BackgroundButton.png';
         // UI sprites
@@ -80,11 +96,11 @@ export class SimonDiceUI {
         const state = this.game.getState();
         if (state.state === 'waitingForInput') {
             // Check which button was clicked
-            const buttonY = 450;
+            const buttonY = 480;
             const buttonHeight = 100;
             const buttonWidth = 100;
             // Get button positions (left to right: 0, 1, 2)
-            const positions = [90, 190, 290]; // X positions for buttons
+            const positions = [60, 190, 320]; // X positions for buttons (más separados)
             // Find which button type is at each position
             const buttonAtPosition = {
                 [state.buttonPositions.cloud]: 'cloud',
@@ -96,9 +112,23 @@ export class SimonDiceUI {
                 if (x >= buttonX && x <= buttonX + buttonWidth &&
                     y >= buttonY && y <= buttonY + buttonHeight) {
                     const clickedButton = buttonAtPosition[i];
-                    this.game.pressButton(clickedButton);
+                    const success = this.game.pressButton(clickedButton);
                     this.buttonPressedType = clickedButton;
                     this.buttonPressStartTime = Date.now();
+                    if (!success) {
+                        // Error - start error pause (mostrar el botón que pulsaste mal)
+                        this.isShowingError = true;
+                        this.errorPauseTimer = Date.now();
+                    }
+                    else {
+                        // Check if sequence completed
+                        const state = this.game.getState();
+                        if (state.currentInputIndex >= state.currentSequence.length) {
+                            // Success - start success pause
+                            this.isShowingSuccess = true;
+                            this.successPauseTimer = Date.now();
+                        }
+                    }
                     break;
                 }
             }
@@ -139,6 +169,8 @@ export class SimonDiceUI {
         else if (state.state === 'waitingForInput' || state.state === 'processingInput') {
             this.renderPlayingScreen(state);
             this.updateButtonPress();
+            this.updateErrorPause();
+            this.updateSuccessPause();
         }
         else if (state.state === 'finished') {
             this.renderFinishedScreen(state);
@@ -268,6 +300,7 @@ export class SimonDiceUI {
             this.game.startGameplay();
             this.shuffleStartTime = Date.now();
             this.isShuffling = true;
+            this.showAllIcons = true; // Mostrar iconos durante shuffle
         }
     }
     renderPlayingScreen(state) {
@@ -350,19 +383,29 @@ export class SimonDiceUI {
         const iconY = panelY + 10;
         for (let i = 0; i < state.currentSequence.length; i++) {
             const buttonType = state.currentSequence[i];
-            const sprite = this.getSpriteForButton(buttonType);
+            const sprite = this.getBlackSpriteForButton(buttonType);
             const iconX = startX + i * iconSpacing;
             if (sprite && sprite.complete) {
-                this.ctx.drawImage(sprite, iconX, iconY, iconSize, iconSize);
+                // Maintain aspect ratio
+                const aspectRatio = sprite.width / sprite.height;
+                let iconW = iconSize;
+                let iconH = iconSize;
+                if (aspectRatio > 1) {
+                    iconH = iconW / aspectRatio;
+                }
+                else {
+                    iconW = iconH * aspectRatio;
+                }
+                this.ctx.drawImage(sprite, iconX, iconY, iconW, iconH);
             }
         }
         this.ctx.restore();
     }
     renderButtons(state, isPreview) {
         this.ctx.save();
-        const buttonY = 450;
+        const buttonY = 480;
         const buttonSize = 100;
-        const positions = [90, 190, 290]; // X positions for buttons (left, center, right)
+        const positions = [60, 190, 320]; // X positions for buttons (más separados)
         // Get which button is at each position
         const buttonAtPosition = isPreview ? {
             0: 'cloud',
@@ -374,23 +417,43 @@ export class SimonDiceUI {
             [state.buttonPositions.panel]: 'panel'
         };
         for (let i = 0; i < 3; i++) {
-            const buttonX = positions[i];
+            const targetX = positions[i];
             const buttonType = buttonAtPosition[i];
-            // Apply shuffle animation if active
-            let finalX = buttonX;
+            // Apply shuffle animation if active - REAL MOVEMENT
+            let finalX = targetX;
             let scale = 1;
             let rotation = 0;
             if (this.isShuffling && !isPreview) {
-                // Animate shuffle (simplificado sin tween)
                 const progress = this.shuffleAnimationProgress;
-                scale = 0.8 + 0.2 * Math.sin(progress * Math.PI);
-                rotation = progress * 360 * (i % 2 === 0 ? 1 : -1);
+                const oldPos = this.oldButtonPositions[buttonType];
+                const newPos = state.buttonPositions[buttonType];
+                const oldX = positions[oldPos];
+                const newX = positions[newPos];
+                // Ease out back for overshoot effect
+                let easeProgress = progress;
+                if (progress < 1) {
+                    const c1 = 1.70158;
+                    const c3 = c1 + 1;
+                    easeProgress = 1 + c3 * Math.pow(progress - 1, 3) + c1 * Math.pow(progress - 1, 2);
+                }
+                // Interpolate position
+                finalX = oldX + (newX - oldX) * easeProgress;
+                // Scale and rotation during shuffle
+                if (progress < 0.3) {
+                    scale = 1 - progress / 0.3 * 0.2; // Scale down to 0.8
+                    rotation = (progress / 0.3) * 180 * (buttonType === 'star' ? -1 : 1);
+                }
+                else {
+                    scale = 0.8 + (progress - 0.3) / 0.7 * 0.2; // Scale back to 1
+                    rotation = 180 * (1 + (progress - 0.3) / 0.7) * (buttonType === 'star' ? -1 : 1);
+                }
             }
             // Apply button press animation
             if (this.buttonPressedType === buttonType && !isPreview) {
                 const elapsed = Date.now() - this.buttonPressStartTime;
                 if (elapsed < this.BUTTON_PRESS_DURATION) {
-                    scale = 1.2 - (elapsed / this.BUTTON_PRESS_DURATION) * 0.2;
+                    const pressProgress = elapsed / this.BUTTON_PRESS_DURATION;
+                    scale = 1 + 0.2 * (1 - pressProgress); // Scale to 1.2 then back to 1
                 }
             }
             this.ctx.save();
@@ -408,24 +471,47 @@ export class SimonDiceUI {
                 this.ctx.lineWidth = 2;
                 this.ctx.strokeRect(-buttonSize / 2, -buttonSize / 2, buttonSize, buttonSize);
             }
-            // Button icon (visible if revealed or preview)
-            const isRevealed = isPreview || state.revealedButtons?.includes(buttonType);
+            // Button icon visibility logic:
+            // - Preview: siempre visible
+            // - Shuffle + post-shuffle: todos visibles (showAllIcons = true)
+            // - Durante input: solo los revelados (revealedButtons)
+            // - Botón presionado: visible aunque sea incorrecto (para ver tu error)
+            const isButtonPressed = this.buttonPressedType === buttonType;
+            const isRevealed = isPreview || this.showAllIcons || isButtonPressed || (state.revealedButtons && state.revealedButtons.length > 0 && state.revealedButtons.includes(buttonType));
             if (isRevealed) {
-                const sprite = this.getSpriteForButton(buttonType);
-                const iconSize = 60;
+                const sprite = this.getWhiteSpriteForButton(buttonType);
                 if (sprite && sprite.complete) {
-                    this.ctx.drawImage(sprite, -iconSize / 2, -iconSize / 2, iconSize, iconSize);
+                    // Maintain aspect ratio
+                    const iconMaxSize = 70;
+                    const aspectRatio = sprite.width / sprite.height;
+                    let iconW = iconMaxSize;
+                    let iconH = iconMaxSize;
+                    if (aspectRatio > 1) {
+                        iconH = iconW / aspectRatio;
+                    }
+                    else {
+                        iconW = iconH * aspectRatio;
+                    }
+                    this.ctx.drawImage(sprite, -iconW / 2, -iconH / 2, iconW, iconH);
                 }
             }
             this.ctx.restore();
         }
         this.ctx.restore();
     }
-    getSpriteForButton(buttonType) {
+    getBlackSpriteForButton(buttonType) {
         switch (buttonType) {
-            case 'cloud': return this.cloudSprite;
-            case 'star': return this.starSprite;
-            case 'panel': return this.panelSprite;
+            case 'cloud': return this.cloudBlackSprite;
+            case 'star': return this.starBlackSprite;
+            case 'panel': return this.panelBlackSprite;
+            default: return null;
+        }
+    }
+    getWhiteSpriteForButton(buttonType) {
+        switch (buttonType) {
+            case 'cloud': return this.cloudWhiteSprite;
+            case 'star': return this.starWhiteSprite;
+            case 'panel': return this.panelWhiteSprite;
             default: return null;
         }
     }
@@ -437,14 +523,27 @@ export class SimonDiceUI {
             if (elapsed >= this.SHUFFLE_DURATION) {
                 this.isShuffling = false;
                 this.postShuffleTimer = Date.now();
+                // Update old positions for next shuffle
+                this.oldButtonPositions = { ...state.buttonPositions };
+                // Iconos siguen visibles durante el post-shuffle delay
             }
         }
         else if (this.postShuffleTimer > 0) {
-            // Post-shuffle delay
+            // Post-shuffle delay (iconos aún visibles)
             const elapsed = Date.now() - this.postShuffleTimer;
             const delayMs = this.game.getPostShuffleDelay() * 1000;
             if (elapsed >= delayMs) {
                 this.postShuffleTimer = 0;
+                this.hideIconsTimer = Date.now();
+                // Ahora ocultar los iconos
+                this.showAllIcons = false;
+            }
+        }
+        else if (this.hideIconsTimer > 0) {
+            // Esperar un momento con iconos ocultos antes de mostrar secuencia
+            const elapsed = Date.now() - this.hideIconsTimer;
+            if (elapsed >= this.HIDE_ICONS_DELAY) {
+                this.hideIconsTimer = 0;
                 this.sequenceDisplayTimer = Date.now();
             }
         }
@@ -464,6 +563,38 @@ export class SimonDiceUI {
             this.buttonPressedType = null;
         }
     }
+    updateErrorPause() {
+        if (this.isShowingError && this.errorPauseTimer > 0) {
+            const elapsed = Date.now() - this.errorPauseTimer;
+            const pauseDuration = this.game.getErrorPauseDuration() * 1000;
+            if (elapsed >= pauseDuration) {
+                this.isShowingError = false;
+                this.errorPauseTimer = 0;
+                this.buttonPressedType = null; // Ocultar el botón mal presionado
+                // Start new sequence after error
+                this.game.startNewSequenceAfterError();
+                this.shuffleStartTime = Date.now();
+                this.isShuffling = true;
+                this.showAllIcons = true; // Mostrar iconos durante shuffle
+            }
+        }
+    }
+    updateSuccessPause() {
+        if (this.isShowingSuccess && this.successPauseTimer > 0) {
+            const elapsed = Date.now() - this.successPauseTimer;
+            const pauseDuration = 200; // 0.2s de pausa tras éxito
+            if (elapsed >= pauseDuration) {
+                this.isShowingSuccess = false;
+                this.successPauseTimer = 0;
+                this.buttonPressedType = null;
+                // Start new sequence after success
+                this.game.startNewSequenceAfterSuccess();
+                this.shuffleStartTime = Date.now();
+                this.isShuffling = true;
+                this.showAllIcons = true; // Mostrar iconos durante shuffle
+            }
+        }
+    }
     renderFinishedScreen(state) {
         this.ctx.save();
         // Fondo blanco
@@ -476,16 +607,28 @@ export class SimonDiceUI {
         }
         const canvasWidth = this.canvas.width;
         const centerX = canvasWidth / 2;
-        const centerY = this.canvas.height / 2;
+        const centerY = 200; // Más arriba
         // Background slides from left (0.1s)
         const bgProgress = Math.min(elapsed / 100, 1);
         const bgX = centerX - canvasWidth * (1 - bgProgress);
         if (this.timesUpBackgroundSprite && this.timesUpBackgroundSprite.complete) {
-            this.ctx.drawImage(this.timesUpBackgroundSprite, bgX - 200, centerY - 100, 400, 200);
+            // Maintain aspect ratio
+            const bgMaxW = 400;
+            const bgMaxH = 120;
+            const bgAspect = this.timesUpBackgroundSprite.width / this.timesUpBackgroundSprite.height;
+            let bgW = bgMaxW;
+            let bgH = bgMaxH;
+            if (bgAspect > bgMaxW / bgMaxH) {
+                bgH = bgW / bgAspect;
+            }
+            else {
+                bgW = bgH * bgAspect;
+            }
+            this.ctx.drawImage(this.timesUpBackgroundSprite, bgX - bgW / 2, centerY - bgH / 2, bgW, bgH);
         }
         else {
             this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-            this.ctx.fillRect(bgX - 200, centerY - 100, 400, 200);
+            this.ctx.fillRect(bgX - 200, centerY - 60, 400, 120);
         }
         // Letter enters from right with overshoot (0.2s after bg, total 0.3s)
         if (elapsed >= 100) {
@@ -497,7 +640,19 @@ export class SimonDiceUI {
                 letterProgress;
             const letterX = centerX + canvasWidth * (1 - easeProgress);
             if (this.timesUpLetterSprite && this.timesUpLetterSprite.complete) {
-                this.ctx.drawImage(this.timesUpLetterSprite, letterX - 150, centerY - 60, 300, 120);
+                // Maintain aspect ratio
+                const letterMaxW = 300;
+                const letterMaxH = 100;
+                const letterAspect = this.timesUpLetterSprite.width / this.timesUpLetterSprite.height;
+                let letterW = letterMaxW;
+                let letterH = letterMaxH;
+                if (letterAspect > letterMaxW / letterMaxH) {
+                    letterH = letterW / letterAspect;
+                }
+                else {
+                    letterW = letterH * letterAspect;
+                }
+                this.ctx.drawImage(this.timesUpLetterSprite, letterX - letterW / 2, centerY - letterH / 2, letterW, letterH);
             }
             else {
                 this.ctx.fillStyle = '#000';
@@ -550,9 +705,15 @@ export class SimonDiceUI {
         this.shuffleAnimationProgress = 0;
         this.postShuffleTimer = 0;
         this.sequenceDisplayTimer = 0;
+        this.hideIconsTimer = 0;
         this.buttonPressedType = null;
         this.gameOverStartTime = 0;
         this.hasCalledOnGameEnd = false;
+        this.showAllIcons = false;
+        this.isShowingError = false;
+        this.isShowingSuccess = false;
+        this.errorPauseTimer = 0;
+        this.successPauseTimer = 0;
     }
     destroy() {
         this.game.reset();
