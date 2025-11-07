@@ -8,7 +8,9 @@
       "Bash(npm install:*)",
       "Bash(vercel --yes:*)",
       "Bash(vercel login)",
-      "Bash(vercel --prod)"
+      "Bash(vercel --prod)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ],
     "deny": [],
     "ask": []

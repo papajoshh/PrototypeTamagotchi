@@ -47,6 +47,11 @@ export class GameUI {
   private settingsDragStartScrollOffset: number = 0;
   private settingsMaxScroll: number = 0;
 
+  // Touch tracking para distinguir tap de drag
+  private touchStartX: number = 0;
+  private touchStartY: number = 0;
+  private touchStartTime: number = 0;
+
   // Settings UI state
   private settingsCache: Map<string, HTMLImageElement> = new Map();
   private showingSleepSchedulePopup: boolean = false;
@@ -398,6 +403,11 @@ export class GameUI {
       const x = touch.clientX - rect.left;
       const y = touch.clientY - rect.top;
 
+      // Guardar posición y tiempo inicial del touch
+      this.touchStartX = x;
+      this.touchStartY = y;
+      this.touchStartTime = Date.now();
+
       if (this.currentMenu === 'feed') {
         const panelHeight = 310;
         const panelY = this.canvas.height - panelHeight * this.menuAnimationProgress;
@@ -448,9 +458,34 @@ export class GameUI {
       }
     });
 
-    this.canvas.addEventListener('touchend', () => {
+    this.canvas.addEventListener('touchend', (e) => {
+      const wasDragging = this.isDraggingIngredients || this.isDraggingSettings;
+
       this.isDraggingIngredients = false;
       this.isDraggingSettings = false;
+
+      // Si no estaba dragging, es un tap → llamar handleClick()
+      if (!wasDragging && e.changedTouches && e.changedTouches.length > 0) {
+        const rect = this.canvas.getBoundingClientRect();
+        const touch = e.changedTouches[0];
+        const x = touch.clientX - rect.left;
+        const y = touch.clientY - rect.top;
+
+        // Verificar que el touch no se movió mucho (máximo 10px)
+        const distance = Math.sqrt(
+          Math.pow(x - this.touchStartX, 2) +
+          Math.pow(y - this.touchStartY, 2)
+        );
+
+        // Verificar que fue rápido (máximo 300ms)
+        const duration = Date.now() - this.touchStartTime;
+
+        // Si es un tap (poco movimiento y rápido), llamar handleClick
+        if (distance < 10 && duration < 300) {
+          this.handleClick(x, y);
+          e.preventDefault(); // Prevenir click duplicado
+        }
+      }
     });
   }
 
