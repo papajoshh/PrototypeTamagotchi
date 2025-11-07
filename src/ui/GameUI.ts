@@ -109,8 +109,8 @@ export class GameUI {
     this.settingsUI = new SettingsUI(canvas, settings);
     this.feedingRewards = new FeedingRewards(canvas);
 
-    // Aplicar filtro blanco y negro al canvas
-    this.canvas.style.filter = 'grayscale(1) contrast(2) brightness(1.1)';
+    // Aplicar filtro blanco y negro al canvas (compatible con móvil)
+    this.canvas.style.filter = 'grayscale(100%)';
 
     // Setup event listeners
     this.setupEventListeners();
