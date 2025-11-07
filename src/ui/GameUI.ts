@@ -2547,7 +2547,7 @@ export class GameUI {
     this.activeMinigame = null;
 
     // Cerrar el menú de comida al volver del minijuego
-    this.feedMenuOpen = false;
+    this.currentMenu = null;
 
     console.log(`[GameUI] Cooking minigame ${success ? 'SUCCESS' : 'FAILED'} with ingredient: ${ingredientId}`);
 

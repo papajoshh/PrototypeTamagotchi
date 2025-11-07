@@ -362,8 +362,8 @@ console.log('  - pet.memorySystem - Check memories');
   }
 
   // Add some memories
-  addMemory('intelectual', 3);
-  addMemory('edgy', 2);
+  (window as any).addMemory('intelectual', 3);
+  (window as any).addMemory('edgy', 2);
 
   // Force evolve to Child
   pet.growthPoints = 10000; // Exceed threshold
@@ -376,24 +376,24 @@ console.log('  - pet.memorySystem - Check memories');
   console.log('━'.repeat(60));
 
   // Reset to baby
-  resetPet();
+  (window as any).resetPet();
   pet.stage = LifeStage.Baby;
   pet.growthPoints = 0;
 
   // Baby → Child with childPersonality
   console.log(`\n1️⃣ Baby → Child with memory "${childPersonality}"`);
-  addMemory(childPersonality, 5);
-  forceEvolve();
+  (window as any).addMemory(childPersonality, 5);
+  (window as any).forceEvolve();
 
   // Child → Young with youngMemory
   console.log(`\n2️⃣ Child → Young with memory "${youngMemory}"`);
-  addMemory(youngMemory, 5);
-  forceEvolve();
+  (window as any).addMemory(youngMemory, 5);
+  (window as any).forceEvolve();
 
   // Young → Adult with adultMemory
   console.log(`\n3️⃣ Young → Adult with memory "${adultMemory}"`);
-  addMemory(adultMemory, 5);
-  forceEvolve();
+  (window as any).addMemory(adultMemory, 5);
+  (window as any).forceEvolve();
 
   console.log('\n' + '━'.repeat(60));
   console.log(`✅ Evolution path complete!`);
