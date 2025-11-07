@@ -29,6 +29,11 @@ export class Pet {
   // Decoración actual
   currentRoom: string = 'style1'; // Por defecto style1
 
+  // Sistema de eclosión progresiva del huevo
+  eggTaps: number = 0;
+  readonly EGG_TAPS_REQUIRED: number = 20;
+  eggRotation: number = 0; // Ángulo de rotación del huevo (metrónomo: -30° a +30°)
+
   // Eventos
   onEvolve?: (newStage: LifeStage) => void;
   onDeath?: () => void;
@@ -329,30 +334,23 @@ export class Pet {
     }
   }
 
-  // Resucitar (con anuncio)
+  // Resucitar (vuelve a Egg, no directamente a Baby)
   revive() {
     if (this.stage === LifeStage.Dead) {
-      this.stage = LifeStage.Baby; // Vuelve a la última etapa antes de morir
+      this.stage = LifeStage.Egg; // Vuelve a huevo
+      this.eggTaps = 0; // Resetear progreso de taps
+      this.eggRotation = 0; // Resetear rotación del huevo
+      this.personality = null; // Limpiar personalidad
+      this.memorySystem = new MemorySystem(); // Resetear memorias
       this.illness.cure();
       this.hunger.reset();
       this.boring.reset();
-      this.poop.reset(); // Limpiar cacas al resucitar
-      // Actualizar timers según nueva etapa
+      this.poop.reset();
+      this.growthPoints = 0; // Resetear crecimiento
+      this.wasNeglected = false; // Resetear flag de descuidado
+      // Actualizar timers al stage Egg (no se actualizan en update porque Egg está excluido)
       this.hunger.onStageChange(this.stage);
       this.boring.onStageChange(this.stage);
-    }
-  }
-
-  // Tap en el huevo para nacer
-  tapEgg() {
-    if (this.stage === LifeStage.Egg) {
-      this.stage = LifeStage.Baby;
-
-      // Actualizar tiempos de necesidades según nueva etapa
-      this.hunger.onStageChange(this.stage);
-      this.boring.onStageChange(this.stage);
-
-      // Baby nace con 1 estrella de hambre y 1 de diversión
 
       if (this.onEvolve) {
         this.onEvolve(this.stage);
@@ -360,11 +358,76 @@ export class Pet {
     }
   }
 
+  // Ascender (de ReadyToAscend vuelve a Egg para un nuevo ciclo)
+  ascend() {
+    if (this.stage === LifeStage.ReadyToAscend) {
+      console.log('[Pet] Ascending! Returning to Egg for a new cycle...');
+      this.stage = LifeStage.Egg; // Vuelve a huevo
+      this.eggTaps = 0; // Resetear progreso de taps
+      this.eggRotation = 0; // Resetear rotación del huevo
+      this.personality = null; // Limpiar personalidad
+      this.memorySystem = new MemorySystem(); // Resetear memorias
+      this.illness.cure();
+      this.hunger.reset();
+      this.boring.reset();
+      this.poop.reset();
+      this.growthPoints = 0; // Resetear crecimiento
+      this.wasNeglected = false; // Resetear flag de descuidado
+      // Actualizar timers al stage Egg
+      this.hunger.onStageChange(this.stage);
+      this.boring.onStageChange(this.stage);
+
+      if (this.onEvolve) {
+        this.onEvolve(this.stage);
+      }
+    }
+  }
+
+  // Tap en el huevo para ir eclosionando progresivamente
+  tapEgg() {
+    if (this.stage === LifeStage.Egg) {
+      this.eggTaps++;
+
+      // Alternar rotación del huevo (metrónomo: -30° <-> +30°)
+      // Si está en 0° o positivo, ir a -30°. Si está en negativo, ir a +30°
+      if (this.eggRotation <= 0) {
+        this.eggRotation = 15; // Mover a la derecha
+      } else {
+        this.eggRotation = -15; // Mover a la izquierda
+      }
+
+      // Si alcanzamos el número requerido de taps, eclosionar
+      if (this.eggTaps >= this.EGG_TAPS_REQUIRED) {
+        this.stage = LifeStage.Baby;
+        this.eggTaps = 0; // Resetear contador
+        this.eggRotation = 0; // Resetear rotación
+
+        // Actualizar tiempos de necesidades según nueva etapa
+        this.hunger.onStageChange(this.stage);
+        this.boring.onStageChange(this.stage);
+
+        // Baby nace con 1 estrella de hambre y 1 de diversión
+
+        if (this.onEvolve) {
+          this.onEvolve(this.stage);
+        }
+      }
+    }
+  }
+
+  // Obtener progreso de eclosión (0-1)
+  getEggProgress(): number {
+    if (this.stage !== LifeStage.Egg) return 0;
+    return this.eggTaps / this.EGG_TAPS_REQUIRED;
+  }
+
   // Serialización para guardar
   save(): string {
     return JSON.stringify({
       stage: this.stage,
       growthPoints: this.growthPoints,
+      eggTaps: this.eggTaps,
+      eggRotation: this.eggRotation,
       hunger: this.hunger.serialize(),
       boring: this.boring.serialize(),
       poop: this.poop.serialize(),
@@ -381,6 +444,8 @@ export class Pet {
     const parsed = JSON.parse(data);
     this.stage = parsed.stage;
     this.growthPoints = parsed.growthPoints;
+    this.eggTaps = parsed.eggTaps || 0;
+    this.eggRotation = parsed.eggRotation || 0;
     this.hunger.deserialize(parsed.hunger);
     this.boring.deserialize(parsed.boring);
     this.poop.deserialize(parsed.poop);

@@ -29,6 +29,7 @@ export class GameUI {
   onCure?: () => void;
   onTimeChange?: (multiplier: number) => void;
   onTapEgg?: () => void;
+  onAscend?: () => void;
   onFeedWithIngredient?: (ingredientId: string) => void;
   onPlayMinigame?: (minigameId: string, personality: string) => void;
   onStartCookingMinigame?: (ingredientId: string, tier: number) => void;
@@ -51,6 +52,7 @@ export class GameUI {
   private touchStartX: number = 0;
   private touchStartY: number = 0;
   private touchStartTime: number = 0;
+  private justHandledTouch: boolean = false; // Flag para evitar doble disparo touch+click
 
   // Settings UI state
   private settingsCache: Map<string, HTMLImageElement> = new Map();
@@ -328,7 +330,14 @@ export class GameUI {
   }
 
   setupEventListeners() {
+    // Click handler para desktop (mouse) y fallback para touch
     this.canvas.addEventListener('click', (e) => {
+      // Evitar doble disparo si ya manejamos un touch reciente
+      if (this.justHandledTouch) {
+        this.justHandledTouch = false;
+        return;
+      }
+
       const rect = this.canvas.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
@@ -482,8 +491,16 @@ export class GameUI {
 
         // Si es un tap (poco movimiento y rápido), llamar handleClick
         if (distance < 10 && duration < 300) {
+          // Setear flag para evitar que el evento click también se dispare
+          this.justHandledTouch = true;
+
+          // Limpiar flag después de 100ms por si acaso el click no se dispara
+          setTimeout(() => {
+            this.justHandledTouch = false;
+          }, 100);
+
           this.handleClick(x, y);
-          e.preventDefault(); // Prevenir click duplicado
+          e.preventDefault(); // Prevenir el click sintético que algunos navegadores generan
         }
       }
     });
@@ -631,6 +648,38 @@ export class GameUI {
       return;
     }
 
+    // Tap en ReadyToAscend -> ascender y volver a Egg
+    if (this.pet.stage === LifeStage.ReadyToAscend) {
+      // Click en el área central donde está el pet brillante
+      const centerX = this.canvas.width / 2;
+      const centerY = 300;
+      const distance = Math.sqrt((x - centerX) ** 2 + (y - centerY) ** 2);
+
+      if (distance < 100) { // Radio de 100px alrededor del pet
+        if (this.onAscend) {
+          this.onAscend();
+        }
+      }
+      return;
+    }
+
+    // Botones de menú inferior - ahora son 3 botones (sin medicina)
+    const buttonY = 560;
+    const buttonWidth = 160; // 480px / 3 botones
+    const buttonHeight = 60;
+
+    // Verificar click en botones ANTES de verificar menú abierto
+    if (y >= buttonY && y <= buttonY + buttonHeight) {
+      if (x >= 0 && x < buttonWidth) {
+        this.openMenu('feed');
+      } else if (x >= buttonWidth && x < buttonWidth * 2) {
+        this.openMenu('play');
+      } else if (x >= buttonWidth * 2 && x < buttonWidth * 3) {
+        this.openMenu('room');
+      }
+      return;
+    }
+
     // Si hay un menú abierto
     if (this.currentMenu) {
       // No permitir interacción durante la animación de cierre
@@ -664,22 +713,6 @@ export class GameUI {
 
       // Click dentro del panel -> manejar según el menú
       this.handleMenuPanelClick(x, y, panelY);
-      return;
-    }
-
-    // Botones de menú inferior - ahora son 3 botones (sin medicina)
-    const buttonY = 560;
-    const buttonWidth = 160; // 480px / 3 botones
-    const buttonHeight = 60;
-
-    if (y >= buttonY && y <= buttonY + buttonHeight) {
-      if (x >= 0 && x < buttonWidth) {
-        this.openMenu('feed');
-      } else if (x >= buttonWidth && x < buttonWidth * 2) {
-        this.openMenu('play');
-      } else if (x >= buttonWidth * 2 && x < buttonWidth * 3) {
-        this.openMenu('room');
-      }
       return;
     }
 
@@ -1261,13 +1294,41 @@ export class GameUI {
         renderWidth = maxSize * aspectRatio;
       }
 
-      this.ctx.drawImage(
-        sprite,
-        centerX - renderWidth / 2,
-        centerY - renderHeight / 2,
-        renderWidth,
-        renderHeight
-      );
+      // Caso especial: Huevo con rotación de metrónomo (pivote en la base)
+      if (this.pet.stage === LifeStage.Egg && this.pet.eggRotation !== 0) {
+        this.ctx.save();
+
+        // Pivote en la base del huevo (centro-abajo)
+        const pivotX = centerX;
+        const pivotY = centerY + renderHeight / 2;
+
+        // Trasladar al pivote
+        this.ctx.translate(pivotX, pivotY);
+
+        // Rotar (convertir de grados a radianes)
+        const angleRadians = (this.pet.eggRotation * Math.PI) / 180;
+        this.ctx.rotate(angleRadians);
+
+        // Dibujar la imagen con offset para que el pivote quede en la base
+        this.ctx.drawImage(
+          sprite,
+          -renderWidth / 2,  // Centrado en X respecto al pivote
+          -renderHeight,     // Desplazado hacia arriba para que la base esté en el pivote
+          renderWidth,
+          renderHeight
+        );
+
+        this.ctx.restore();
+      } else {
+        // Renderizado normal sin rotación
+        this.ctx.drawImage(
+          sprite,
+          centerX - renderWidth / 2,
+          centerY - renderHeight / 2,
+          renderWidth,
+          renderHeight
+        );
+      }
     } else {
       // Fallback to emojis
       this.ctx.font = '80px Arial';
@@ -1356,12 +1417,42 @@ export class GameUI {
   }
 
   renderGrowthBar() {
-    if (this.pet.stage === LifeStage.Egg || this.pet.stage >= LifeStage.ReadyToAscend) return;
+    if (this.pet.stage >= LifeStage.ReadyToAscend) return;
 
     const barX = 40;
     const barY = 520;
     const barWidth = 360; // Reducido para dejar espacio al hexágono
     const barHeight = 24;
+
+    // Caso especial: Barra de progreso del huevo
+    if (this.pet.stage === LifeStage.Egg) {
+      const eggProgress = this.pet.getEggProgress();
+
+      this.ctx.save();
+
+      // Fondo de la barra (gris)
+      this.ctx.fillStyle = '#ddd';
+      this.ctx.fillRect(barX, barY, barWidth, barHeight);
+
+      // Progreso del huevo (azul claro)
+      this.ctx.fillStyle = '#4fc3f7';
+      this.ctx.fillRect(barX, barY, barWidth * eggProgress, barHeight);
+
+      // Borde
+      this.ctx.strokeStyle = '#333';
+      this.ctx.lineWidth = 2;
+      this.ctx.strokeRect(barX, barY, barWidth, barHeight);
+
+      // Texto centrado
+      this.ctx.fillStyle = '#333';
+      this.ctx.font = '14px Arial';
+      this.ctx.textAlign = 'center';
+      this.ctx.textBaseline = 'middle';
+      this.ctx.fillText(`Tapea para eclosionar ${this.pet.eggTaps}/${this.pet.EGG_TAPS_REQUIRED}`, barX + barWidth / 2, barY + barHeight / 2);
+
+      this.ctx.restore();
+      return; // Salir ya que Egg no tiene stage icon
+    }
     const radius = barHeight / 2; // Radio para bordes redondeados
 
     // Barra con bordes redondeados (cápsula)
@@ -1473,8 +1564,12 @@ export class GameUI {
   }
 
   renderActionButtons() {
-    // No mostrar botones de acción si es Egg (el huevo no puede comer, jugar, etc.)
-    if (this.pet.stage === LifeStage.Egg) return;
+    // No mostrar botones de acción en estados especiales (Egg, ReadyToAscend, Dead)
+    if (this.pet.stage === LifeStage.Egg ||
+        this.pet.stage === LifeStage.ReadyToAscend ||
+        this.pet.stage === LifeStage.Dead) {
+      return;
+    }
 
     const y = 560;
     const buttonWidth = 160; // 3 botones: 480px / 3 = 160px

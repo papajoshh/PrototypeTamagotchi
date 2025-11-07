@@ -77,16 +77,27 @@ ui.onCure = () => {
 };
 
 ui.onTapEgg = () => {
-  // Si está muerto, revivir directamente como Baby
+  // Si está muerto, revivir a Egg
   if (pet.stage === 6) { // LifeStage.Dead
-    console.log('[Game] Reviving pet...');
-    pet.revive(); // Usa el método revive() que ya resetea todo correctamente
-    console.log('[Game] Pet revived as Baby with 1⭐ hunger and 1⭐ fun!');
+    console.log('[Game] Reviving pet as Egg...');
+    pet.revive();
+    console.log('[Game] Pet revived as Egg! Tap to hatch (0/20 taps)');
   } else {
-    // Huevo normal
+    // Huevo normal: progreso de taps
     pet.tapEgg();
-    console.log('[Game] Egg hatched!');
+    const progress = pet.getEggProgress();
+    if (pet.stage === 1) { // LifeStage.Baby
+      console.log('[Game] Egg hatched! Baby born with 1⭐ hunger and 1⭐ fun!');
+    } else {
+      console.log(`[Game] Egg tap progress: ${pet.eggTaps}/${pet.EGG_TAPS_REQUIRED} (${Math.floor(progress * 100)}%)`);
+    }
   }
+};
+
+ui.onAscend = () => {
+  console.log('[Game] Pet is ready to ascend!');
+  pet.ascend();
+  console.log('[Game] Pet ascended! Starting new cycle as Egg (0/20 taps)');
 };
 
 ui.onTimeChange = (multiplier) => {
