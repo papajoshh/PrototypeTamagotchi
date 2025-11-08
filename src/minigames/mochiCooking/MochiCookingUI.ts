@@ -473,25 +473,8 @@ export class MochiCookingUI {
 
       this.ctx.restore();
 
-      // Render circle según el estado
+      // Render end marker (punto de llegada del drag)
       if (state.roundStep === 'tap2_drag') {
-        // FASE TAP2: Calcular posición actual del círculo (interpolación basada en swipeMoveProgress)
-        const progress = state.swipeMoveProgress;
-        const currentCircleX = startX + (endX - startX) * progress;
-        const currentCircleY = startY + (endY - startY) * progress;
-
-        // Calcular progreso CORRECTO basado en roundStartTime (no stepStartTime)
-        // Para que el círculo NO crezca al cambiar de tap1 a tap2_drag
-        const tap1Duration = this.game.getCircleDuration();
-        const cooldownDuration = this.game.getCooldownDuration();
-        const totalTimeUntilTap2 = tap1Duration + cooldownDuration;
-        const elapsedSinceRoundStart = Date.now() - this.game.getRoundStartTime();
-        const tap2Progress = Math.max(0, Math.min(1, elapsedSinceRoundStart / totalTimeUntilTap2));
-
-        // Render circle con progreso correcto y duración TOTAL (igual que en preview)
-        this.renderCircle(currentCircleX, currentCircleY, tap2Progress, totalTimeUntilTap2);
-
-        // Render end marker
         this.ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
         this.ctx.beginPath();
         this.ctx.arc(endX, endY, 20, 0, Math.PI * 2);
@@ -534,35 +517,48 @@ export class MochiCookingUI {
       }
     }
 
-    // Render tap1 circle si estamos en esa fase
-    if (state.roundStep === 'tap1' && state.currentTarget) {
-      const target = state.currentTarget;
-      const targetX = mochiX + Math.cos(target.angle) * radius;
-      const targetY = mochiY + Math.sin(target.angle) * radius;
+    // ============ RENDERIZAR CÍRCULOS ANIMADOS ============
+    // Usar SIEMPRE roundStartTime para calcular progreso (no se resetea)
+    // No renderizar durante 'hammer' (solo durante tap1, cooldown, tap2_drag)
 
-      const tap1Duration = this.game.getCircleDuration();
-      this.renderCircle(targetX, targetY, state.circleProgress, tap1Duration);
-    }
+    if (state.roundStep !== 'hammer' && state.roundStartTime) {
+      const elapsed = Date.now() - state.roundStartTime;
+      const beatDuration = this.game.getBeatDuration();
 
-    // Render tap2 circle TAMBIÉN durante tap1 y cooldown (preview de cuándo hay que tapear)
-    if ((state.roundStep === 'tap1' || state.roundStep === 'cooldown') && state.currentSwipe) {
-      const tap2Start = state.currentSwipe.startCircle;
-      const tap2X = mochiX + Math.cos(tap2Start.angle) * radius;
-      const tap2Y = mochiY + Math.sin(tap2Start.angle) * radius;
+      // -------- CÍRCULO TAP1 --------
+      // Solo visible durante 'tap1' (antes de pulsar)
+      if (state.roundStep === 'tap1' && state.currentTarget) {
+        const target = state.currentTarget;
+        const targetX = mochiX + Math.cos(target.angle) * radius;
+        const targetY = mochiY + Math.sin(target.angle) * radius;
 
-      const tap1Duration = this.game.getCircleDuration();
-      const cooldownDuration = this.game.getCooldownDuration();
-      const totalTimeUntilTap2 = tap1Duration + cooldownDuration;
+        // Progreso: elapsed / (1 beat)
+        const tap1Beats = this.game.getTap1CircleBeats();
+        const tap1Duration = tap1Beats * beatDuration;
+        const tap1Progress = Math.max(0, Math.min(1, elapsed / tap1Duration));
 
-      // Tiempo transcurrido desde el inicio de la ronda
-      const elapsedSinceRoundStart = Date.now() - this.game.getRoundStartTime();
+        this.renderCircle(targetX, targetY, tap1Progress, tap1Beats);
+      }
 
-      // Progreso de tap2: mismo cálculo de progreso pero con tiempo total
-      const tap2Progress = Math.max(0, Math.min(1, elapsedSinceRoundStart / totalTimeUntilTap2));
+      // -------- CÍRCULO TAP2 --------
+      // Visible durante tap1 (preview), cooldown, y tap2_drag (si !isFollowing)
+      const shouldShowTap2 =
+        state.roundStep === 'tap1' ||
+        state.roundStep === 'cooldown' ||
+        (state.roundStep === 'tap2_drag' && !state.isFollowing);
 
-      // Renderizar tap2 circle con duración TOTAL (tap1 + cooldown)
-      // El círculo será MÁS GRANDE porque tiene más tiempo
-      this.renderCircle(tap2X, tap2Y, tap2Progress, totalTimeUntilTap2);
+      if (shouldShowTap2 && state.currentSwipe) {
+        const tap2Start = state.currentSwipe.startCircle;
+        const tap2X = mochiX + Math.cos(tap2Start.angle) * radius;
+        const tap2Y = mochiY + Math.sin(tap2Start.angle) * radius;
+
+        // Progreso: elapsed / (2 beats)
+        const tap2Beats = this.game.getTap2CircleBeats();
+        const tap2Duration = tap2Beats * beatDuration;
+        const tap2Progress = Math.max(0, Math.min(1, elapsed / tap2Duration));
+
+        this.renderCircle(tap2X, tap2Y, tap2Progress, tap2Beats);
+      }
     }
 
     // RENDERIZAR CÍRCULOS DE PREVIEW AL FINAL (para que estén encima de todo)
@@ -602,28 +598,29 @@ export class MochiCookingUI {
     }
   }
 
-  private renderCircle(x: number, y: number, progress: number, durationMs: number = 1200): void {
-    // VELOCIDAD CONSTANTE: radio se reduce a velocidad constante
-    // Si dura más tiempo, el círculo inicial debe ser MÁS GRANDE
-    const baseOuterRadius = 60; // Radio base para 1.2s
-    const baseInnerRadius = 25;
+  private renderCircle(x: number, y: number, progress: number, beats: number): void {
+    // Radios constantes (no escalar por duración para mantener consistencia visual)
+    const baseOuterRadius = 60;
+    const innerRadius = 25;
 
-    // Escalar el radio según la duración (más tiempo = más grande)
-    const durationScale = durationMs / 1200; // 1200ms es la duración base
-    const outerRadius = baseOuterRadius * durationScale;
-    const innerRadius = baseInnerRadius;
+    // OPCIÓN A: Tamaño constante (recomendado)
+    const outerRadius = baseOuterRadius;
 
-    // Outer circle (shrinking) - usar siempre dibujado programático para mejor control
+    // OPCIÓN B (alternativa): Escalar por √beats para que círculos de más beats sean ligeramente más grandes
+    // const outerRadius = baseOuterRadius * Math.sqrt(beats / 1); // tap2 (2 beats) será √2 ≈ 1.41x más grande
+
+    // Outer circle (shrinking): se encoge desde outer hasta inner
     const currentRadius = outerRadius - (outerRadius - innerRadius) * progress;
 
+    // Borde negro del círculo que se encoge
     this.ctx.strokeStyle = '#000';
     this.ctx.lineWidth = 4;
     this.ctx.beginPath();
     this.ctx.arc(x, y, currentRadius, 0, Math.PI * 2);
     this.ctx.stroke();
 
-    // Inner circle (fixed target) - BLANCO Y NEGRO
-    this.ctx.fillStyle = '#fff'; // BLANCO
+    // Inner circle (fixed target) - círculo blanco fijo en el centro
+    this.ctx.fillStyle = '#fff';
     this.ctx.beginPath();
     this.ctx.arc(x, y, innerRadius, 0, Math.PI * 2);
     this.ctx.fill();

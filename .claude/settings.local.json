@@ -10,7 +10,9 @@
       "Bash(vercel login)",
       "Bash(vercel --prod)",
       "Bash(git commit:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(vercel:*)",
+      "Bash(npm run preview:*)"
     ],
     "deny": [],
     "ask": []

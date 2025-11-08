@@ -28,6 +28,7 @@ export interface MochiCookingGameState {
 
   // Timing
   stepStartTime: number;
+  roundStartTime: number; // Tiempo de inicio de la ronda completa (NO se resetea en cada step)
   circleProgress: number; // 0-1, 1 = círculo cerrado completamente
 
   // Estado
@@ -86,15 +87,36 @@ export class MochiCookingGame {
   private swipeMoveProgress: number = 0; // 0-1, progreso del movimiento del círculo
   private isFollowing: boolean = false; // Si el jugador está siguiendo
 
-  // Configuración por tier - NUEVO BALANCE (más fácil)
-  private readonly CIRCLE_DURATION_BY_TIER = [1600, 1200, 900]; // 1.6s, 1.2s, 0.9s (tap timing - MÁS LENTO)
-  private readonly COOLDOWN_BY_TIER = [600, 500, 400]; // 0.6s, 0.5s, 0.4s entre tap1 y tap2
+  // ============ CONFIGURACIÓN BPM ============
+  // BPM por tier: más BPM = más rápido = más difícil
+  private readonly BPM_BY_TIER = [117, 150, 180];
+  // Tier 1: 117 BPM → 513ms/beat (obligatorio por diseño)
+  // Tier 2: 150 BPM → 400ms/beat (más rápido)
+  // Tier 3: 180 BPM → 333ms/beat (muy rápido)
+
+  // Configuración en BEATS (constante para todos los tiers)
+  private readonly TAP1_CIRCLE_BEATS = 1;      // Tap1 dura 1 beat
+  private readonly TAP2_CIRCLE_BEATS = 2;      // Tap2 dura 2 beats (más tiempo de anticipación)
+  private readonly HAMMER_BEATS = 2;           // Martillo dura 2 beats
+  private readonly COOLDOWN_BEATS = 0;         // Cooldown 0 beats (nueva ronda inmediata)
+  private readonly SWIPE_MOVE_BEATS = 0.6;     // Drag dura 60% de 1 beat
+
+  // Getters dinámicos basados en tier
+  private get bpm(): number {
+    return this.BPM_BY_TIER[this.tier - 1];
+  }
+
+  private get beatDuration(): number {
+    return 60000 / this.bpm;
+  }
+
+  // Otros parámetros (no dependen de BPM)
   private readonly PENALTY_BY_TIER = [10, 30, 50];
-  private readonly MAX_SCORE_BY_TIER = [250, 320, 390]; // Reducido ~24% para hacer más alcanzable
+  private readonly MAX_SCORE_BY_TIER = [250, 320, 390];
   private readonly REWARD_PER_STEP = 10;
   private readonly STUN_DURATION = 1000; // 1s
   private readonly FEEDBACK_DURATION = 500; // 0.5s
-  private readonly SWIPE_MOVE_DURATION_BY_TIER = [300, 250, 200]; // 0.3s, 0.25s, 0.2s (drag duration - MÁS RÁPIDO)
+
   private readonly FOLLOW_TOLERANCE_BY_TIER = [0.20, 0.17, 0.15]; // 20%, 17%, 15% (más permisivo en tier bajo)
   private readonly CHANNEL_WIDTH_BY_TIER = [0.12, 0.10, 0.08]; // 12%, 10%, 8% (más permisivo en tier bajo)
 
@@ -143,14 +165,17 @@ export class MochiCookingGame {
 
     // Update hammer hit animation
     if (this.hammerAnimating) {
-      // Animación de golpe: 300ms
+      // Animación de golpe: usa HAMMER_DURATION (Tier 1: 2 beats = 1026ms)
+      const hammerDuration = this.getHammerDuration();
       const hammerElapsed = now - this.stepStartTime;
-      if (hammerElapsed < 300) {
-        // Progreso del golpe (0 -> 1 -> 0)
-        const rawProgress = hammerElapsed / 300;
+
+      if (hammerElapsed < hammerDuration) {
+        // Progreso del golpe (0 -> 1 -> 0) - dos golpes en la duración
+        // Primer golpe: 0-50% del tiempo, segundo golpe: 50-100% del tiempo
+        const rawProgress = (hammerElapsed % (hammerDuration / 2)) / (hammerDuration / 2);
         this.hammerHitProgress = rawProgress < 0.5
-          ? rawProgress * 2  // 0 -> 1 en primera mitad
-          : 2 - rawProgress * 2; // 1 -> 0 en segunda mitad
+          ? rawProgress * 2  // 0 -> 1 en primera mitad de cada golpe
+          : 2 - rawProgress * 2; // 1 -> 0 en segunda mitad de cada golpe
       } else {
         this.hammerAnimating = false;
         this.hammerHitProgress = 0;
@@ -162,7 +187,7 @@ export class MochiCookingGame {
 
     // Update cooldown
     if (this.roundStep === 'cooldown') {
-      const cooldownTime = this.COOLDOWN_BY_TIER[this.tier - 1];
+      const cooldownTime = this.getCooldownDuration();
       if (now - this.stepStartTime >= cooldownTime) {
         // Check win condition
         if (this.score >= this.maxScore) {
@@ -177,7 +202,7 @@ export class MochiCookingGame {
     // Update circle progress
     if (this.roundStep === 'tap1') {
       const elapsed = now - this.stepStartTime;
-      const circleDuration = this.CIRCLE_DURATION_BY_TIER[this.tier - 1];
+      const circleDuration = this.getCircleDuration();
       this.circleProgress = Math.min(elapsed / circleDuration, 1);
 
       // Auto-fail if circle completes without tap
@@ -186,7 +211,7 @@ export class MochiCookingGame {
       }
     } else if (this.roundStep === 'tap2_drag') {
       const elapsed = now - this.stepStartTime;
-      const circleDuration = this.CIRCLE_DURATION_BY_TIER[this.tier - 1];
+      const circleDuration = this.getCircleDuration();
 
       if (!this.isFollowing) {
         // Fase 1: Círculo estático encogiendo (como tap1)
@@ -202,7 +227,7 @@ export class MochiCookingGame {
         // Fase 2: Círculo moviéndose (ya fue pulsado correctamente)
         // El stepStartTime se resetea cuando empiezas a seguir
         const moveElapsed = now - this.stepStartTime;
-        const swipeMoveDuration = this.SWIPE_MOVE_DURATION_BY_TIER[this.tier - 1];
+        const swipeMoveDuration = this.getSwipeMoveDuration();
         this.swipeMoveProgress = Math.min(moveElapsed / swipeMoveDuration, 1);
 
         // Auto-success if movement completes
@@ -541,17 +566,48 @@ export class MochiCookingGame {
     this.stepStartTime = Date.now();
   }
 
-  // Getters para UI
-  getCircleDuration(): number {
-    return this.CIRCLE_DURATION_BY_TIER[this.tier - 1];
+  // ============ GETTERS PÚBLICOS PARA UI ============
+
+  getBPM(): number {
+    return this.bpm;
   }
 
-  getCooldownDuration(): number {
-    return this.COOLDOWN_BY_TIER[this.tier - 1];
+  getBeatDuration(): number {
+    return this.beatDuration;
   }
 
   getRoundStartTime(): number {
     return this.roundStartTime;
+  }
+
+  // Duraciones calculadas dinámicamente basadas en BPM y beats
+  getCircleDuration(): number {
+    return Math.round(this.beatDuration * this.TAP1_CIRCLE_BEATS);
+  }
+
+  getTap2CircleDuration(): number {
+    return Math.round(this.beatDuration * this.TAP2_CIRCLE_BEATS);
+  }
+
+  getHammerDuration(): number {
+    return Math.round(this.beatDuration * this.HAMMER_BEATS);
+  }
+
+  getCooldownDuration(): number {
+    return Math.round(this.beatDuration * this.COOLDOWN_BEATS);
+  }
+
+  getSwipeMoveDuration(): number {
+    return Math.round(this.beatDuration * this.SWIPE_MOVE_BEATS);
+  }
+
+  // Getters de beats (para renderizado de círculos)
+  getTap1CircleBeats(): number {
+    return this.TAP1_CIRCLE_BEATS;
+  }
+
+  getTap2CircleBeats(): number {
+    return this.TAP2_CIRCLE_BEATS;
   }
 
   getState(): MochiCookingGameState {
@@ -564,6 +620,7 @@ export class MochiCookingGame {
       currentTarget: this.currentTarget,
       currentSwipe: this.currentSwipe,
       stepStartTime: this.stepStartTime,
+      roundStartTime: this.roundStartTime,
       circleProgress: this.circleProgress,
       roundsCompleted: this.roundsCompleted,
       isStunned: this.isStunned,

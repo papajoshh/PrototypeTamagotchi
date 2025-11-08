@@ -663,23 +663,6 @@ export class GameUI {
       return;
     }
 
-    // Botones de menú inferior - ahora son 3 botones (sin medicina)
-    const buttonY = 560;
-    const buttonWidth = 160; // 480px / 3 botones
-    const buttonHeight = 60;
-
-    // Verificar click en botones ANTES de verificar menú abierto
-    if (y >= buttonY && y <= buttonY + buttonHeight) {
-      if (x >= 0 && x < buttonWidth) {
-        this.openMenu('feed');
-      } else if (x >= buttonWidth && x < buttonWidth * 2) {
-        this.openMenu('play');
-      } else if (x >= buttonWidth * 2 && x < buttonWidth * 3) {
-        this.openMenu('room');
-      }
-      return;
-    }
-
     // Si hay un menú abierto
     if (this.currentMenu) {
       // No permitir interacción durante la animación de cierre
@@ -695,8 +678,9 @@ export class GameUI {
       // Click en pestañas
       const tabsY = panelY - tabHeight;
       if (y >= tabsY && y < panelY) {
-        const tabs: ('feed' | 'play' | 'room' | 'settings')[] = ['feed', 'play', 'room', 'settings'];
-        const tabWidth = this.canvas.width / tabs.length;
+        // Solo hay 3 pestañas visibles: feed, play, room (settings NO tiene pestaña)
+        const tabs: ('feed' | 'play' | 'room')[] = ['feed', 'play', 'room'];
+        const tabWidth = this.canvas.width / tabs.length; // 480 / 3 = 160px
         const tabIndex = Math.floor(x / tabWidth);
         if (tabIndex >= 0 && tabIndex < tabs.length) {
           // Solo cambiar el menú actual, sin reiniciar la animación
@@ -713,6 +697,23 @@ export class GameUI {
 
       // Click dentro del panel -> manejar según el menú
       this.handleMenuPanelClick(x, y, panelY);
+      return;
+    }
+
+    // Botones de menú inferior - ahora son 3 botones (sin medicina)
+    // IMPORTANTE: Esto solo se ejecuta si NO hay menú abierto
+    const buttonY = 560;
+    const buttonWidth = 160; // 480px / 3 botones
+    const buttonHeight = 60;
+
+    if (y >= buttonY && y <= buttonY + buttonHeight) {
+      if (x >= 0 && x < buttonWidth) {
+        this.openMenu('feed');
+      } else if (x >= buttonWidth && x < buttonWidth * 2) {
+        this.openMenu('play');
+      } else if (x >= buttonWidth * 2 && x < buttonWidth * 3) {
+        this.openMenu('room');
+      }
       return;
     }
 
