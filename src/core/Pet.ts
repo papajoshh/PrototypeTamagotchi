@@ -25,6 +25,12 @@ export class Pet {
 
   // Sistema de descuidado
   wasNeglected: boolean = false;
+  neglectedTime: number = 0; // Tiempo acumulado en estado neglected (0⭐ hambre o diversión)
+
+  // Sistema de mimitos
+  mimitosTimer: number = 120; // 2 minutos hasta pedir mimitos
+  readonly MIMITOS_INTERVAL: number = 120; // Cada 2 minutos
+  isDemandingMimitos: boolean = false;
 
   // Decoración actual
   currentRoom: string = 'style1'; // Por defecto style1
@@ -58,9 +64,18 @@ export class Pet {
     this.poop.update(deltaTime);
     this.illness.update(deltaTime);
 
-    // Detectar descuido (llegar a 0 estrellas)
-    if (this.hunger.getStars() === 0 || this.boring.getStars() === 0) {
+    // Acumular tiempo de descuido (0⭐ hambre o diversión)
+    const isCurrentlyNeglected = this.hunger.getStars() === 0 || this.boring.getStars() === 0;
+    if (isCurrentlyNeglected) {
+      this.neglectedTime += deltaTime;
+    }
+
+    // Si acumula la MITAD del tiempo de crecimiento de la etapa → Descuidado
+    const growthThreshold = GROWTH_THRESHOLDS[this.stage];
+    const neglectThreshold = growthThreshold / 2;
+    if (this.neglectedTime >= neglectThreshold) {
       this.wasNeglected = true;
+      console.log(`[Pet] 🚨 Neglect threshold reached: ${(this.neglectedTime / 60).toFixed(1)} min / ${(neglectThreshold / 60).toFixed(1)} min`);
     }
 
     // Crecimiento automático con multiplicador
@@ -80,6 +95,16 @@ export class Pet {
 
     // Verificar muerte
     this.checkDeath();
+
+    // Sistema de mimitos (solo cuando está completamente satisfecho)
+    const isFullySatisfied = this.hunger.isFullySatiated() && this.boring.isFullyEntertained();
+    if (isFullySatisfied && !this.isDemandingMimitos) {
+      this.mimitosTimer -= deltaTime;
+      if (this.mimitosTimer <= 0) {
+        this.isDemandingMimitos = true;
+        console.log('[Pet] 💕 Demanding mimitos!');
+      }
+    }
   }
 
   // Factor de crecimiento x0.5 si hambriento o aburrido (acumulativo)
@@ -160,8 +185,9 @@ export class Pet {
     // Olvidar recuerdos al evolucionar
     this.memorySystem.forgetAll();
 
-    // Reset flag de descuido
+    // Reset sistema de descuido
     this.wasNeglected = false;
+    this.neglectedTime = 0;
 
     // Actualizar tiempos de necesidades según nueva etapa
     this.hunger.onStageChange(this.stage);
@@ -304,6 +330,23 @@ export class Pet {
     this.illness.cure();
   }
 
+  // Sistema de mimitos
+  giveMimitos() {
+    // Cada tap da 0.2% del threshold de crecimiento actual
+    const threshold = GROWTH_THRESHOLDS[this.stage];
+    const growthIncrease = threshold * 0.002; // 0.2% = 0.002
+    this.growthPoints += growthIncrease;
+
+    console.log(`[Pet] 💕 Mimito given! +${growthIncrease.toFixed(1)} growth (${(growthIncrease / threshold * 100).toFixed(1)}%)`);
+  }
+
+  endMimitos() {
+    // Resetear estado de mimitos
+    this.isDemandingMimitos = false;
+    this.mimitosTimer = this.MIMITOS_INTERVAL; // Resetear a 2 minutos
+    console.log('[Pet] 💕 Mimitos session ended. Next demand in 2 minutes.');
+  }
+
   // Verificar condiciones de muerte y enfermedad
   checkDeath() {
     // Verificar si debe enfermarse
@@ -348,6 +391,9 @@ export class Pet {
       this.poop.reset();
       this.growthPoints = 0; // Resetear crecimiento
       this.wasNeglected = false; // Resetear flag de descuidado
+      this.neglectedTime = 0; // Resetear tiempo acumulado de descuido
+      this.mimitosTimer = this.MIMITOS_INTERVAL; // Resetear timer de mimitos
+      this.isDemandingMimitos = false; // Resetear demanda de mimitos
       // Actualizar timers al stage Egg (no se actualizan en update porque Egg está excluido)
       this.hunger.onStageChange(this.stage);
       this.boring.onStageChange(this.stage);
@@ -373,6 +419,9 @@ export class Pet {
       this.poop.reset();
       this.growthPoints = 0; // Resetear crecimiento
       this.wasNeglected = false; // Resetear flag de descuidado
+      this.neglectedTime = 0; // Resetear tiempo acumulado de descuido
+      this.mimitosTimer = this.MIMITOS_INTERVAL; // Resetear timer de mimitos
+      this.isDemandingMimitos = false; // Resetear demanda de mimitos
       // Actualizar timers al stage Egg
       this.hunger.onStageChange(this.stage);
       this.boring.onStageChange(this.stage);
@@ -436,6 +485,9 @@ export class Pet {
       memorySystem: this.memorySystem.serialize(),
       inventory: this.inventory.serialize(),
       wasNeglected: this.wasNeglected,
+      neglectedTime: this.neglectedTime,
+      mimitosTimer: this.mimitosTimer,
+      isDemandingMimitos: this.isDemandingMimitos,
       currentRoom: this.currentRoom,
     });
   }
@@ -461,6 +513,15 @@ export class Pet {
     }
     if (parsed.wasNeglected !== undefined) {
       this.wasNeglected = parsed.wasNeglected;
+    }
+    if (parsed.neglectedTime !== undefined) {
+      this.neglectedTime = parsed.neglectedTime;
+    }
+    if (parsed.mimitosTimer !== undefined) {
+      this.mimitosTimer = parsed.mimitosTimer;
+    }
+    if (parsed.isDemandingMimitos !== undefined) {
+      this.isDemandingMimitos = parsed.isDemandingMimitos;
     }
     if (parsed.currentRoom) {
       this.currentRoom = parsed.currentRoom;

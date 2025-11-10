@@ -104,6 +104,14 @@ ui.onTimeChange = (multiplier) => {
   gameLoop.setTimeMultiplier(multiplier);
 };
 
+ui.onRequestNotificationPermission = async () => {
+  return await gameLoop.requestNotificationPermission();
+};
+
+ui.onTestNotification = () => {
+  gameLoop.testNotification();
+};
+
 // Eventos del pet
 pet.onEvolve = (newStage) => {
   console.log(`[Game] Pet evolved to stage ${newStage}`);
@@ -169,6 +177,7 @@ console.log('');
 console.log('📊 DEBUG:');
 console.log('  - pet           - Access pet object');
 console.log('  - pet.inventory - Check inventory');
+console.log('  - debugBackgroundSystem() - Check if background is working');
 console.log('  - pet.memorySystem - Check memories');
 
 // Exponer funciones globales para control
@@ -268,6 +277,38 @@ console.log('  - pet.memorySystem - Check memories');
 (window as any).makeFull = () => {
   (pet.hunger as any).stars = 3;
   console.log('Pet is now full! (3 stars)');
+};
+
+// Funciones de debug para diversión
+(window as any).setBoring = (stars: number) => {
+  if (stars < 0 || stars > 3) {
+    console.error('Boring stars must be between 0 and 3');
+    return;
+  }
+  (pet.boring as any).stars = stars;
+  console.log(`Boring set to ${stars} stars`);
+};
+
+(window as any).makeEntertained = () => {
+  (pet.boring as any).stars = 3;
+  console.log('Pet is now entertained! (3 stars)');
+};
+
+// Función de debug para mimitos
+(window as any).activateMimitos = () => {
+  // Poner hambre y diversión a 3 estrellas usando métodos públicos
+  pet.hunger.satiate(3); // Saciar completamente
+  pet.boring.entertain(); // Entretener completamente (1 vez = 3 estrellas)
+
+  // Activar DIRECTAMENTE el flag de mimitos (no esperar al update)
+  pet.isDemandingMimitos = true;
+  pet.mimitosTimer = 120; // Reset timer para siguiente ciclo
+
+  console.log('✨ Mimitos activated!');
+  console.log(`💕 Hunger stars: ${pet.hunger.getStars()}, Boring stars: ${pet.boring.getStars()}`);
+  console.log(`💕 isDemandingMimitos: ${pet.isDemandingMimitos}`);
+  console.log('💕 Look for the heart icon (💕) next to the other status indicators!');
+  console.log('👆 Click on your pet to start the mimitos minigame!');
 };
 
 // Funciones de debug para evolución
@@ -414,6 +455,53 @@ console.log('  - pet.memorySystem - Check memories');
 
 (window as any).pet = pet;
 (window as any).gameLoop = gameLoop;
+
+// Debug function para verificar sistema de background
+(window as any).debugBackgroundSystem = () => {
+  console.log('='.repeat(60));
+  console.log('🔍 BACKGROUND SYSTEM DEBUG');
+  console.log('='.repeat(60));
+
+  const gl = gameLoop as any;
+
+  console.log('\n📱 Page Visibility:');
+  console.log(`  document.hidden: ${document.hidden}`);
+  console.log(`  document.visibilityState: ${document.visibilityState}`);
+
+  console.log('\n⏰ Last Save Time:');
+  const lastSave = localStorage.getItem('last-save-time');
+  if (lastSave) {
+    const timeSince = (Date.now() - parseInt(lastSave)) / 1000;
+    console.log(`  Last saved: ${timeSince.toFixed(1)}s ago`);
+    console.log(`  Timestamp: ${new Date(parseInt(lastSave)).toLocaleTimeString()}`);
+  } else {
+    console.log(`  ❌ No last-save-time found`);
+  }
+
+  console.log('\n🐣 Pet State:');
+  console.log(`  Stage: ${['Egg', 'Baby', 'Child', 'Young', 'Adult', 'ReadyToAscend', 'Dead'][pet.stage]}`);
+  console.log(`  Growth points: ${pet.growthPoints.toFixed(1)} / ${[0, 3600, 18000, 32400, 32400, 0, 0][pet.stage]}`);
+  console.log(`  Growth progress: ${(pet.getGrowthProgress() * 100).toFixed(1)}%`);
+  console.log(`  Hunger: ${pet.hunger.getStars()}⭐`);
+  console.log(`  Boring: ${pet.boring.getStars()}⭐`);
+
+  console.log('\n💤 Sleep System:');
+  console.log(`  Is sleeping: ${gl.settings.sleep.isSleeping}`);
+  console.log(`  Mode: ${gl.settings.sleep.mode}`);
+
+  console.log('\n⚙️ Background Intervals:');
+  console.log(`  Background update interval ID: ${gl.backgroundUpdateIntervalId}`);
+  console.log(`  Notification check interval ID: ${gl.notificationCheckIntervalId}`);
+  console.log(`  Intervals running: ${gl.backgroundUpdateIntervalId !== null && gl.notificationCheckIntervalId !== null ? '✅' : '❌'}`);
+
+  console.log('\n💡 INSTRUCTIONS:');
+  console.log('  1. Run this function NOW');
+  console.log('  2. Minimize the app for 2-3 minutes');
+  console.log('  3. Come back and run it AGAIN');
+  console.log('  4. Check if last-save-time and growth changed');
+
+  console.log('='.repeat(60));
+};
 
 // Funciones de testing de notificaciones
 (window as any).testNotification = (type: 'attention_low' | 'attention_critical' | 'illness' | 'near_death' | 'death' | 'evolution') => {

@@ -2,6 +2,7 @@
 import { Pet } from '../../core/Pet';
 import { MochiCookingGame, MochiCookingGameState, SwipeDirection } from './MochiCookingGame';
 import { LifeStage } from '../../core/LifeStage';
+import { InputHelper } from '../../utils/InputHelper';
 
 export class MochiCookingUI {
   private canvas: HTMLCanvasElement;
@@ -96,9 +97,10 @@ export class MochiCookingUI {
   }
 
   private handleMouseDown(e: MouseEvent): void {
-    const rect = this.canvas.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / rect.width;
-    const y = (e.clientY - rect.top) / rect.height;
+    const coords = InputHelper.getCanvasCoordinatesFromMouse(e, this.canvas);
+    // Normalizar a 0-1
+    const x = coords.x / this.canvas.width;
+    const y = coords.y / this.canvas.height;
 
     const state = this.game.getState();
 
@@ -157,9 +159,9 @@ export class MochiCookingUI {
   private handleMouseMove(e: MouseEvent): void {
     if (!this.isDragging) return;
 
-    const rect = this.canvas.getBoundingClientRect();
-    this.dragCurrentX = (e.clientX - rect.left) / rect.width;
-    this.dragCurrentY = (e.clientY - rect.top) / rect.height;
+    const coords = InputHelper.getCanvasCoordinatesFromMouse(e, this.canvas);
+    this.dragCurrentX = coords.x / this.canvas.width;
+    this.dragCurrentY = coords.y / this.canvas.height;
 
     // Actualizar seguimiento continuamente mientras se mueve
     this.game.updateFollowing(this.dragCurrentX, this.dragCurrentY, true);
@@ -168,9 +170,9 @@ export class MochiCookingUI {
   private handleMouseUp(e: MouseEvent): void {
     if (!this.isDragging) return;
 
-    const rect = this.canvas.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / rect.width;
-    const y = (e.clientY - rect.top) / rect.height;
+    const coords = InputHelper.getCanvasCoordinatesFromMouse(e, this.canvas);
+    const x = coords.x / this.canvas.width;
+    const y = coords.y / this.canvas.height;
 
     // Notificar que soltó el dedo
     this.game.updateFollowing(x, y, false);
@@ -179,32 +181,80 @@ export class MochiCookingUI {
 
   private handleTouchStart(e: TouchEvent): void {
     e.preventDefault();
-    const touch = e.touches[0];
-    const mouseEvent = new MouseEvent('mousedown', {
-      clientX: touch.clientX,
-      clientY: touch.clientY
-    });
-    this.handleMouseDown(mouseEvent);
+    const coords = InputHelper.getCanvasCoordinatesFromTouchEvent(e, this.canvas);
+    if (!coords) return;
+
+    // Normalizar a 0-1
+    const x = coords.x / this.canvas.width;
+    const y = coords.y / this.canvas.height;
+
+    const state = this.game.getState();
+
+    if (state.state === 'waiting') {
+      const buttonX = this.canvas.width / 2 - 100;
+      const buttonY = 400;
+      const buttonW = 200;
+      const buttonH = 60;
+
+      const absX = x * this.canvas.width;
+      const absY = y * this.canvas.height;
+
+      if (absX >= buttonX && absX <= buttonX + buttonW &&
+          absY >= buttonY && absY <= buttonY + buttonH) {
+        this.game.start();
+      }
+    } else if (state.state === 'playing') {
+      if (state.roundStep === 'tap2_drag') {
+        this.isDragging = true;
+        this.dragStartX = x;
+        this.dragStartY = y;
+        this.dragCurrentX = x;
+        this.dragCurrentY = y;
+        this.game.updateFollowing(x, y, true);
+      } else {
+        this.game.handleTap(x, y);
+      }
+    } else if (state.state === 'finished') {
+      const buttonX = this.canvas.width / 2 - 120;
+      const buttonY = 550;
+      const buttonW = 240;
+      const buttonH = 60;
+
+      const absX = x * this.canvas.width;
+      const absY = y * this.canvas.height;
+
+      if (absX >= buttonX && absX <= buttonX + buttonW &&
+          absY >= buttonY && absY <= buttonY + buttonH) {
+        this.handleGameEnd(state);
+      }
+    }
   }
 
   private handleTouchMove(e: TouchEvent): void {
     e.preventDefault();
-    const touch = e.touches[0];
-    const mouseEvent = new MouseEvent('mousemove', {
-      clientX: touch.clientX,
-      clientY: touch.clientY
-    });
-    this.handleMouseMove(mouseEvent);
+    if (!this.isDragging) return;
+
+    const coords = InputHelper.getCanvasCoordinatesFromTouchEvent(e, this.canvas);
+    if (!coords) return;
+
+    this.dragCurrentX = coords.x / this.canvas.width;
+    this.dragCurrentY = coords.y / this.canvas.height;
+
+    this.game.updateFollowing(this.dragCurrentX, this.dragCurrentY, true);
   }
 
   private handleTouchEnd(e: TouchEvent): void {
     e.preventDefault();
-    const touch = e.changedTouches[0];
-    const mouseEvent = new MouseEvent('mouseup', {
-      clientX: touch.clientX,
-      clientY: touch.clientY
-    });
-    this.handleMouseUp(mouseEvent);
+    if (!this.isDragging) return;
+
+    const coords = InputHelper.getCanvasCoordinatesFromChangedTouch(e, this.canvas);
+    if (!coords) return;
+
+    const x = coords.x / this.canvas.width;
+    const y = coords.y / this.canvas.height;
+
+    this.game.updateFollowing(x, y, false);
+    this.isDragging = false;
   }
 
   private handleGameEnd(state: MochiCookingGameState): void {
@@ -295,7 +345,7 @@ export class MochiCookingUI {
     this.renderHammer(state);
 
     // Render timing circles (encima del martillo) - SIEMPRE mostrar mientras haya círculos
-    if (state.roundStep === 'tap1' || state.roundStep === 'cooldown' || state.roundStep === 'tap2_drag') {
+    if (state.roundStep === 'tap1' || state.roundStep === 'hammer' || state.roundStep === 'cooldown' || state.roundStep === 'tap2_drag') {
       this.renderTimingCircles(state);
     }
 
@@ -303,6 +353,12 @@ export class MochiCookingUI {
     if (state.showFeedback) {
       this.renderFeedback(state);
     }
+
+    // -------- DEBUG: CONTADOR DE BEATS --------
+    // this.renderBeatCounter(state); // Deshabilitado
+
+    // -------- PARTÍCULAS (encima de todo) --------
+    this.renderParticles(state);
 
     this.ctx.restore();
   }
@@ -421,8 +477,61 @@ export class MochiCookingUI {
     // MOSTRAR TODOS LOS CÍRCULOS DEL CAMINO (preview) - AL FINAL para que estén encima
     // Se renderiza después de todo lo demás
 
-    // Render CÁPSULA si existe currentSwipe (desde tap1 ya se muestra el camino)
-    if (state.currentSwipe) {
+    // -------- CÁPSULA DEL PREVIEW (durante hammer/cooldown) --------
+    if ((state.roundStep === 'hammer' || state.roundStep === 'cooldown') && state.previewRound.swipeTarget) {
+      const swipe = state.previewRound.swipeTarget;
+      const startX = mochiX + Math.cos(swipe.startCircle.angle) * radius;
+      const startY = mochiY + Math.sin(swipe.startCircle.angle) * radius;
+      const endX = mochiX + Math.cos(swipe.endCircle.angle) * radius;
+      const endY = mochiY + Math.sin(swipe.endCircle.angle) * radius;
+
+      // Render CÁPSULA mostrando el camino del drag (desde startCircle hasta endCircle)
+      const capsuleWidth = 60; // Ancho de la cápsula
+      const dx = endX - startX;
+      const dy = endY - startY;
+      const length = Math.sqrt(dx * dx + dy * dy);
+      const angle = Math.atan2(dy, dx);
+
+      this.ctx.save();
+      this.ctx.translate(startX, startY);
+      this.ctx.rotate(angle);
+
+      // Dibujar cápsula BLANCO Y NEGRO con patrón de líneas
+      this.ctx.fillStyle = 'rgba(0, 0, 0, 0.15)'; // Gris claro
+      this.ctx.strokeStyle = '#000'; // Borde negro
+      this.ctx.lineWidth = 4;
+
+      // Rectángulo central
+      this.ctx.fillRect(0, -capsuleWidth / 2, length, capsuleWidth);
+      this.ctx.strokeRect(0, -capsuleWidth / 2, length, capsuleWidth);
+
+      // Círculo inicio (izquierda)
+      this.ctx.beginPath();
+      this.ctx.arc(0, 0, capsuleWidth / 2, 0, Math.PI * 2);
+      this.ctx.fill();
+      this.ctx.stroke();
+
+      // Círculo fin (derecha)
+      this.ctx.beginPath();
+      this.ctx.arc(length, 0, capsuleWidth / 2, 0, Math.PI * 2);
+      this.ctx.fill();
+      this.ctx.stroke();
+
+      // Líneas diagonales para patrón
+      this.ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+      this.ctx.lineWidth = 2;
+      for (let i = 0; i < length; i += 15) {
+        this.ctx.beginPath();
+        this.ctx.moveTo(i, -capsuleWidth / 2);
+        this.ctx.lineTo(i + 10, capsuleWidth / 2);
+        this.ctx.stroke();
+      }
+
+      this.ctx.restore();
+    }
+
+    // -------- CÁPSULA ACTIVE (durante tap1/tap2_drag) --------
+    if (state.roundStep !== 'hammer' && state.roundStep !== 'cooldown' && state.currentSwipe) {
       const swipe = state.currentSwipe;
       const startX = mochiX + Math.cos(swipe.startCircle.angle) * radius;
       const startY = mochiY + Math.sin(swipe.startCircle.angle) * radius;
@@ -519,11 +628,16 @@ export class MochiCookingUI {
 
     // ============ RENDERIZAR CÍRCULOS ANIMADOS ============
     // Usar SIEMPRE roundStartTime para calcular progreso (no se resetea)
-    // No renderizar durante 'hammer' (solo durante tap1, cooldown, tap2_drag)
+    // Durante hammer/cooldown, renderizar preview round en su lugar
 
-    if (state.roundStep !== 'hammer' && state.roundStartTime) {
-      const elapsed = Date.now() - state.roundStartTime;
-      const beatDuration = this.game.getBeatDuration();
+    const beatDuration = this.game.getBeatDuration();
+
+    // -------- ACTIVE ROUND (tap1, tap2_drag) --------
+    if (state.roundStep !== 'hammer' && state.roundStep !== 'cooldown' && state.roundStartTime) {
+      // ✅ SOLUCIÓN: Usar tiempo absoluto desde roundStartTime (SIN restar offset)
+      // roundStartTime = momento en que empezó el preview (2 beats atrás)
+      // Los anillos deben continuar encogiendo desde el preview sin resetear
+      const absoluteElapsed = Date.now() - state.roundStartTime;
 
       // -------- CÍRCULO TAP1 --------
       // Solo visible durante 'tap1' (antes de pulsar)
@@ -532,19 +646,19 @@ export class MochiCookingUI {
         const targetX = mochiX + Math.cos(target.angle) * radius;
         const targetY = mochiY + Math.sin(target.angle) * radius;
 
-        // Progreso: elapsed / (1 beat)
-        const tap1Beats = this.game.getTap1CircleBeats();
-        const tap1Duration = tap1Beats * beatDuration;
-        const tap1Progress = Math.max(0, Math.min(1, elapsed / tap1Duration));
+        // Progreso: absoluteElapsed / (2 beats totales)
+        // Durante cooldown: 0 → 1 (2 beats)
+        // Durante tap1: continúa desde donde quedó (sin reset)
+        const totalDuration = 2 * beatDuration; // 2 beats TOTALES (preview + tap1)
+        const tap1Progress = Math.max(0, Math.min(1, absoluteElapsed / totalDuration));
 
-        this.renderCircle(targetX, targetY, tap1Progress, tap1Beats);
+        this.renderCircle(targetX, targetY, tap1Progress, 2); // 2 beats totales
       }
 
       // -------- CÍRCULO TAP2 --------
-      // Visible durante tap1 (preview), cooldown, y tap2_drag (si !isFollowing)
+      // Visible durante tap1 (preview) y tap2_drag (si !isFollowing)
       const shouldShowTap2 =
         state.roundStep === 'tap1' ||
-        state.roundStep === 'cooldown' ||
         (state.roundStep === 'tap2_drag' && !state.isFollowing);
 
       if (shouldShowTap2 && state.currentSwipe) {
@@ -552,19 +666,61 @@ export class MochiCookingUI {
         const tap2X = mochiX + Math.cos(tap2Start.angle) * radius;
         const tap2Y = mochiY + Math.sin(tap2Start.angle) * radius;
 
-        // Progreso: elapsed / (2 beats)
-        const tap2Beats = this.game.getTap2CircleBeats();
-        const tap2Duration = tap2Beats * beatDuration;
-        const tap2Progress = Math.max(0, Math.min(1, elapsed / tap2Duration));
+        // Progreso: absoluteElapsed / (3 beats totales)
+        // Tap2 aparece en preview y continúa durante tap1 y tap2_drag
+        const totalDuration = 3 * beatDuration; // 3 beats TOTALES (más anticipación)
+        const tap2Progress = Math.max(0, Math.min(1, absoluteElapsed / totalDuration));
 
-        this.renderCircle(tap2X, tap2Y, tap2Progress, tap2Beats);
+        this.renderCircle(tap2X, tap2Y, tap2Progress, 3); // 3 beats totales
+      }
+    }
+
+    // -------- PREVIEW ROUND (durante hammer/cooldown) --------
+    // Los círculos de preview duran 2 beats (beats 3-4) y deben estar completamente cerrados al final
+    if ((state.roundStep === 'hammer' || state.roundStep === 'cooldown') && state.previewRound.tap1Circle) {
+      const previewElapsed = Date.now() - state.previewRound.startTime;
+      const previewDuration = 2 * beatDuration; // 2 beats para anticipación completa
+
+      // -------- CÍRCULO TAP1 PREVIEW --------
+      const tap1Circle = state.previewRound.tap1Circle;
+      const tap1X = mochiX + Math.cos(tap1Circle.angle) * radius;
+      const tap1Y = mochiY + Math.sin(tap1Circle.angle) * radius;
+
+      // Progreso: 0-1 durante 2 beats (se cierra completamente al final del hammer)
+      const tap1Progress = Math.max(0, Math.min(1, previewElapsed / previewDuration));
+      this.renderCircle(tap1X, tap1Y, tap1Progress, 2); // 2 beats de duración
+
+      // -------- CÍRCULO TAP2 PREVIEW --------
+      // Visible desde el inicio del preview
+      if (state.previewRound.swipeTarget) {
+        const tap2Start = state.previewRound.swipeTarget.startCircle;
+        const tap2X = mochiX + Math.cos(tap2Start.angle) * radius;
+        const tap2Y = mochiY + Math.sin(tap2Start.angle) * radius;
+
+        // Progreso: tap2 también dura 2 beats pero empieza desde 0 (no desde beat 1)
+        // Para que tenga más margen visual, podría durar más (ej: 3 beats)
+        const tap2Duration = 3 * beatDuration; // 3 beats (más anticipación)
+        const tap2Progress = Math.max(0, Math.min(1, previewElapsed / tap2Duration));
+        this.renderCircle(tap2X, tap2Y, tap2Progress, 3); // 3 beats de duración
       }
     }
 
     // RENDERIZAR CÍRCULOS DE PREVIEW AL FINAL (para que estén encima de todo)
     // Tamaños diferentes: tap1 (pequeño) -> tap2_start (mediano) -> tap2_end (grande)
-    if (state.allCircles && state.allCircles.length > 0) {
-      state.allCircles.forEach((circle, index) => {
+
+    // Durante tap1/tap2_drag: Mostrar círculos de ronda ACTIVA
+    // Durante hammer/cooldown: Mostrar círculos de ronda PREVIEW (siguiente)
+    const circlesArray = (state.roundStep === 'hammer' || state.roundStep === 'cooldown')
+      ? state.previewRound.allCircles
+      : state.allCircles;
+
+    if (circlesArray && circlesArray.length > 0) {
+      // Log de posiciones renderizadas (solo tap1, el primero del array)
+      if (circlesArray[0] && state.roundStep === 'cooldown') {
+        console.log(`[🎨 RENDER] cooldown - showing tap1 at (${circlesArray[0].x.toFixed(2)}, ${circlesArray[0].y.toFixed(2)})`);
+      }
+
+      circlesArray.forEach((circle, index) => {
         const circleX = mochiX + Math.cos(circle.angle) * radius;
         const circleY = mochiY + Math.sin(circle.angle) * radius;
 
@@ -596,6 +752,27 @@ export class MochiCookingUI {
         this.ctx.fillText(`${index + 1}`, circleX, circleY);
       });
     }
+  }
+
+  private renderBeatCounter(state: MochiCookingGameState): void {
+    // Calcular beat desde roundStartTime y stepStartTime
+    const currentBeat = this.game.getCurrentBeat();
+    const stepBeat = this.game.getCurrentStepBeat();
+
+    // Fondo semi-transparente
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    this.ctx.fillRect(this.canvas.width - 200, 10, 190, 140);
+
+    // Texto
+    this.ctx.fillStyle = '#fff';
+    this.ctx.font = 'bold 16px monospace';
+    this.ctx.textAlign = 'left';
+
+    this.ctx.fillText(`Round Beat: ${currentBeat.toFixed(2)}`, this.canvas.width - 190, 35);
+    this.ctx.fillText(`Step Beat: ${stepBeat.toFixed(2)}`, this.canvas.width - 190, 60);
+    this.ctx.fillText(`Step: ${state.roundStep}`, this.canvas.width - 190, 85);
+    this.ctx.fillText(`Score: ${state.score}`, this.canvas.width - 190, 110);
+    this.ctx.fillText(`BPM: ${this.game.getBPM()}`, this.canvas.width - 190, 135);
   }
 
   private renderCircle(x: number, y: number, progress: number, beats: number): void {
@@ -953,6 +1130,47 @@ export class MochiCookingUI {
     }
 
     return 'Misterioso';
+  }
+
+  private renderParticles(state: MochiCookingGameState): void {
+    const canvasWidth = this.canvas.width;
+    const canvasHeight = this.canvas.height;
+
+    state.particles.forEach(particle => {
+      // Calcular alpha (fade out) basado en lifetime
+      const alpha = 1 - (particle.lifetime / particle.maxLifetime);
+
+      // Posición en píxeles
+      const x = particle.x * canvasWidth;
+      const y = particle.y * canvasHeight;
+
+      // Dibujar estrella (5 puntas)
+      this.ctx.save();
+      this.ctx.globalAlpha = alpha;
+      this.ctx.fillStyle = '#FFD700'; // Dorado
+
+      this.ctx.translate(x, y);
+      this.ctx.beginPath();
+
+      // Estrella de 5 puntas
+      for (let i = 0; i < 5; i++) {
+        const angle = (i * 4 * Math.PI) / 5 - Math.PI / 2;
+        const radius = i % 2 === 0 ? particle.size : particle.size / 2;
+        const px = Math.cos(angle) * radius;
+        const py = Math.sin(angle) * radius;
+
+        if (i === 0) {
+          this.ctx.moveTo(px, py);
+        } else {
+          this.ctx.lineTo(px, py);
+        }
+      }
+
+      this.ctx.closePath();
+      this.ctx.fill();
+
+      this.ctx.restore();
+    });
   }
 
   reset(): void {

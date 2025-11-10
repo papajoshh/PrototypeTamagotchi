@@ -238,6 +238,11 @@ export class ParachuteGame {
   }
 
   private collectObject(obj: FallingObject) {
+    // ⛔ Si está stunneado, NO puede recoger NADA (ni bueno ni malo)
+    if (this.isStunned) {
+      return;
+    }
+
     obj.collected = true;
 
     let scoreValue = 0;
@@ -310,7 +315,7 @@ export class ParachuteGame {
   }
 
   calculateRewards(): { tier1: number; tier2: number; tier3: number } {
-    const maxExpectedScore = 30;
+    const maxExpectedScore = 120;
     const scorePercentage = (this.score / maxExpectedScore) * 100;
 
     let tier1 = 0;
@@ -334,7 +339,7 @@ export class ParachuteGame {
   }
 
   getScorePercentage(): number {
-    const maxExpectedScore = 30;
+    const maxExpectedScore = 120;
     return (this.score / maxExpectedScore) * 100;
   }
 

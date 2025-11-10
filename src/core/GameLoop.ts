@@ -25,6 +25,15 @@ export class GameLoop {
   private previousPoop: boolean = false;
   private previousStage: number = 0;
 
+  // Intervals para background (setInterval funciona en background)
+  private notificationCheckIntervalId: number | null = null;
+  private backgroundUpdateIntervalId: number | null = null;
+  private readonly NOTIFICATION_CHECK_INTERVAL = 30000; // 30 segundos
+  private readonly BACKGROUND_UPDATE_INTERVAL = 5000; // 5 segundos
+
+  // Tracking de background updates
+  private lastBackgroundUpdate: number = Date.now();
+
   constructor(pet: Pet) {
     this.pet = pet;
     this.settings = new Settings(); // Carga automáticamente desde localStorage
@@ -57,9 +66,96 @@ export class GameLoop {
     this.pet.update(offlineTime * this.timeMultiplier);
   }
 
+  private setupPageVisibilityListener() {
+    // Detectar cuando vuelves a la app (para recovery de tiempo perdido)
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) {
+        // Volviste a la app - recuperar tiempo perdido por si acaso
+        console.log('[GameLoop] 👁️ Page visible again - running background time recovery');
+        this.simulateBackgroundTime();
+        this.lastBackgroundUpdate = Date.now();
+        this.lastUpdate = Date.now();
+      } else {
+        // App minimizada - guardar timestamp
+        console.log('[GameLoop] 🙈 Page hidden - saving state');
+        this.save();
+      }
+    });
+
+    console.log('[GameLoop] Page visibility listener setup complete');
+  }
+
+  private simulateBackgroundTime() {
+    // Similar a simulateOfflineTime pero para background
+    const lastSave = localStorage.getItem('last-save-time');
+    if (!lastSave) return;
+
+    const now = Date.now();
+    const backgroundTime = (now - parseInt(lastSave)) / 1000; // segundos
+
+    console.log(`[GameLoop] 📱 Android background recovery: Simulating ${backgroundTime.toFixed(1)}s that passed while hidden`);
+
+    // Update sleep system para tiempo transcurrido
+    this.settings.sleep.timePass(new Date());
+
+    // Actualizar pet con todo el tiempo acumulado (si NO está durmiendo)
+    if (!this.settings.sleep.isSleeping) {
+      const deltaTime = backgroundTime * this.timeMultiplier;
+      this.pet.update(deltaTime);
+      console.log(`[GameLoop] Pet updated with ${deltaTime.toFixed(1)}s (multiplier: ${this.timeMultiplier}x)`);
+
+      // Guardar cambios
+      this.save();
+    } else {
+      console.log(`[GameLoop] Pet was sleeping, no update applied`);
+    }
+  }
+
   start(onUpdate?: (pet: Pet) => void) {
     this.onUpdate = onUpdate;
     this.lastUpdate = Date.now();
+
+    // ============ PAGE VISIBILITY API ============
+    // Detectar cuando la app está visible o en background
+    this.setupPageVisibilityListener();
+
+    // ============ SISTEMA DE BACKGROUND (SOLO cuando app está minimizada) ============
+    // setInterval continúa ejecutándose incluso cuando la app está minimizada
+    // requestAnimationFrame SE PAUSA en background, por eso necesitamos esto
+
+    console.log('[GameLoop] Starting background systems:');
+    console.log('[GameLoop] - Pet update every 5s (ALWAYS, even with app open)');
+    console.log('[GameLoop] - Notification check every 30s');
+    console.log('[GameLoop] ⚠️ Background update runs in parallel with requestAnimationFrame');
+
+    // Background update: SIEMPRE actualiza (no confía en Page Visibility API)
+    this.backgroundUpdateIntervalId = window.setInterval(() => {
+      const now = Date.now();
+      const deltaTime = ((now - this.lastBackgroundUpdate) / 1000) * this.timeMultiplier;
+      this.lastBackgroundUpdate = now;
+
+      console.log('[GameLoop] 🔄 Background update - deltaTime:', deltaTime.toFixed(1), 's');
+
+      // Update sleep system
+      this.settings.sleep.timePass(new Date());
+
+      // Actualizar pet si NO está durmiendo
+      if (!this.settings.sleep.isSleeping) {
+        this.pet.update(deltaTime);
+        console.log('[GameLoop] Pet updated - growth:', this.pet.growthPoints.toFixed(1), 'hunger:', this.pet.hunger.getStars(), '⭐');
+      } else {
+        console.log('[GameLoop] ⏸️ Pet sleeping, no update');
+      }
+
+      // Guardar progreso
+      this.save();
+    }, this.BACKGROUND_UPDATE_INTERVAL);
+
+    // Background notifications: verifica y envía notificaciones cada 30 segundos
+    this.notificationCheckIntervalId = window.setInterval(() => {
+      console.log('[GameLoop] Background notification check triggered');
+      this.checkNotifications();
+    }, this.NOTIFICATION_CHECK_INTERVAL);
 
     // Update loop usando requestAnimationFrame (más suave que setInterval)
     const gameLoop = () => {
@@ -75,7 +171,8 @@ export class GameLoop {
         this.pet.update(deltaTime);
       }
 
-      // Detectar cambios y enviar notificaciones
+      // Detectar cambios y enviar notificaciones (inmediato cuando app está activa)
+      // También se ejecuta cada 30s en background via setInterval arriba
       this.checkNotifications();
 
       // Notificar actualización
@@ -186,5 +283,28 @@ export class GameLoop {
 
   getSettings(): Settings {
     return this.settings;
+  }
+
+  async requestNotificationPermission(): Promise<NotificationPermission> {
+    return await this.notifications.requestPermission();
+  }
+
+  testNotification(): void {
+    this.notifications.forceNotify('attention_low');
+  }
+
+  // Cleanup: detener los intervals de background (si es necesario)
+  stop(): void {
+    if (this.backgroundUpdateIntervalId !== null) {
+      window.clearInterval(this.backgroundUpdateIntervalId);
+      this.backgroundUpdateIntervalId = null;
+      console.log('[GameLoop] Background update interval stopped');
+    }
+
+    if (this.notificationCheckIntervalId !== null) {
+      window.clearInterval(this.notificationCheckIntervalId);
+      this.notificationCheckIntervalId = null;
+      console.log('[GameLoop] Notification check interval stopped');
+    }
   }
 }

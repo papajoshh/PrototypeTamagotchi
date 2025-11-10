@@ -3,6 +3,28 @@
 *Última actualización: 2025-01-05*
 *Archivo principal de contexto para agentes de IA*
 
+## 🚨 REGLAS CRÍTICAS DE DESARROLLO
+
+### ⛔ NO LANZAR PREVIEWS - PUERTO 5178 ÚNICO
+**El usuario tiene su propio servidor de desarrollo corriendo en el puerto 5178.**
+
+**WORKFLOW CORRECTO**:
+1. Hacer cambios en el código
+2. Ejecutar `npm run build` → Actualiza dist/
+3. El puerto 5178 (ya corriendo) se actualiza automáticamente
+4. El usuario prueba en http://localhost:5178
+
+**PROHIBIDO**:
+- ❌ NO ejecutar `npm run preview` (crea puertos aleatorios)
+- ❌ NO ejecutar `npm run dev` (no es necesario)
+- ❌ NO lanzar ningún servidor nuevo
+- ❌ NO usar BashOutput para monitorear previews
+
+**PERMITIDO**:
+- ✅ Ejecutar `npm run build` para actualizar dist/
+- ✅ Ejecutar `vercel --prod --yes` si el usuario pide desplegar
+- ✅ El usuario usa http://localhost:5178 (su propio servidor)
+
 ## 📋 Contexto Rápido del Proyecto
 
 **🎯 Qué es**: Prototipo web del juego Tamagotchi para validación rápida de mecánicas antes de implementarlas en Unity
@@ -65,6 +87,9 @@ tamagotchi-web-prototype/
 │   │   ├── Settings.ts         # Sistema de configuraciones
 │   │   ├── Sleep.ts            # Sistema de sueño
 │   │   └── GameLoop.ts         # Loop principal
+│   │
+│   ├── utils/                   # Utilidades
+│   │   └── InputHelper.ts      # Conversión de coordenadas para input
 │   │
 │   ├── ui/
 │   │   ├── GameUI.ts           # Interfaz gráfica principal
@@ -170,6 +195,66 @@ El **Egg es un estado inerte** donde la mascota NO tiene necesidades activas:
 2. Si es sí: Crear archivo nuevo con su propia clase
 3. Importar y usar en la clase principal
 4. Documentar en CLAUDE.md
+
+### 🖱️ InputHelper - Gestión de Eventos de Input
+
+**IMPORTANTE**: Para TODOS los event listeners de mouse/touch, SIEMPRE usar `InputHelper`.
+
+**Problema**: El canvas tiene un tamaño interno fijo (480x640px) pero se escala visualmente en mobile. Las coordenadas de eventos (`clientX`, `clientY`) son relativas al tamaño visual, NO al tamaño interno del canvas.
+
+**Solución**: `InputHelper` convierte automáticamente coordenadas de eventos a coordenadas del canvas interno.
+
+**Ubicación**: `src/utils/InputHelper.ts`
+
+**API**:
+```typescript
+import { InputHelper } from '../utils/InputHelper';
+
+// Mouse events
+canvas.addEventListener('click', (e) => {
+  const { x, y } = InputHelper.getCanvasCoordinatesFromMouse(e, canvas);
+  // x, y están en coordenadas del canvas (0-480, 0-640)
+});
+
+// Touch events
+canvas.addEventListener('touchstart', (e) => {
+  const coords = InputHelper.getCanvasCoordinatesFromTouchEvent(e, canvas);
+  if (!coords) return;
+  const { x, y } = coords; // Coordenadas del canvas
+});
+
+// Touch end (changedTouches)
+canvas.addEventListener('touchend', (e) => {
+  const coords = InputHelper.getCanvasCoordinatesFromChangedTouch(e, canvas);
+  if (!coords) return;
+  const { x, y } = coords;
+});
+```
+
+**⚠️ NUNCA hacer esto**:
+```typescript
+// ❌ MAL - No escala correctamente en mobile
+const rect = canvas.getBoundingClientRect();
+const x = e.clientX - rect.left;
+const y = e.clientY - rect.top;
+```
+
+**✅ SIEMPRE hacer esto**:
+```typescript
+// ✅ BIEN - Escala correctamente en mobile
+const { x, y } = InputHelper.getCanvasCoordinatesFromMouse(e, canvas);
+```
+
+**Archivos que usan InputHelper**:
+- `src/ui/GameUI.ts`
+- `src/minigames/theButton/TheButtonUI.ts`
+- `src/minigames/edgyBunBun/EdgyBunBunUI.ts`
+- `src/minigames/simonDice/SimonDiceUI.ts`
+- `src/minigames/parachute/ParachuteUI.ts`
+- `src/minigames/mochiCooking/MochiCookingUI.ts`
+- `src/minigames/guessTheHigher/GuessTheHigherUI.ts`
+
+**Nota especial**: `MochiCookingUI` usa coordenadas normalizadas (0-1), así que divide por `canvas.width` y `canvas.height` después de usar `InputHelper`.
 
 ## 🔧 Comandos Principales
 

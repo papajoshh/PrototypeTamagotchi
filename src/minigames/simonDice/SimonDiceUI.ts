@@ -1,6 +1,7 @@
 import { SimonDiceGame, SimonDiceGameState, ButtonType } from './SimonDiceGame';
 import { Pet } from '../../core/Pet';
 import { LifeStage } from '../../core/LifeStage';
+import { InputHelper } from '../../utils/InputHelper';
 
 export class SimonDiceUI {
   private canvas: HTMLCanvasElement;
@@ -120,12 +121,18 @@ export class SimonDiceUI {
   }
 
   private setupEventListeners(): void {
+    // Mouse events
     this.canvas.addEventListener('click', (e) => {
-      const rect = this.canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-
+      const { x, y } = InputHelper.getCanvasCoordinatesFromMouse(e, this.canvas);
       this.handleClick(x, y, e);
+    });
+
+    // Touch events for mobile
+    this.canvas.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      const coords = InputHelper.getCanvasCoordinatesFromTouchEvent(e, this.canvas);
+      if (!coords) return;
+      this.handleClick(coords.x, coords.y);
     });
   }
 

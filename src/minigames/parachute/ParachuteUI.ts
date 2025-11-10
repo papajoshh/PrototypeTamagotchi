@@ -1,6 +1,7 @@
 import { ParachuteGame, ParachuteGameState, ObjectType } from './ParachuteGame';
 import { Pet } from '../../core/Pet';
 import { LifeStage } from '../../core/LifeStage';
+import { InputHelper } from '../../utils/InputHelper';
 
 export class ParachuteUI {
   private canvas: HTMLCanvasElement;
@@ -91,15 +92,12 @@ export class ParachuteUI {
   private setupEventListeners(): void {
     // Mouse events
     this.canvas.addEventListener('mousedown', (e) => {
-      const rect = this.canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
+      const { x, y } = InputHelper.getCanvasCoordinatesFromMouse(e, this.canvas);
       this.handleMouseDown(x, y, e);
     });
 
     this.canvas.addEventListener('mousemove', (e) => {
-      const rect = this.canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
+      const { x } = InputHelper.getCanvasCoordinatesFromMouse(e, this.canvas);
       this.handleMouseMove(x);
     });
 
@@ -114,19 +112,16 @@ export class ParachuteUI {
     // Touch events (for mobile)
     this.canvas.addEventListener('touchstart', (e) => {
       e.preventDefault();
-      const rect = this.canvas.getBoundingClientRect();
-      const touch = e.touches[0];
-      const x = touch.clientX - rect.left;
-      const y = touch.clientY - rect.top;
-      this.handleMouseDown(x, y);
+      const coords = InputHelper.getCanvasCoordinatesFromTouchEvent(e, this.canvas);
+      if (!coords) return;
+      this.handleMouseDown(coords.x, coords.y);
     });
 
     this.canvas.addEventListener('touchmove', (e) => {
       e.preventDefault();
-      const rect = this.canvas.getBoundingClientRect();
-      const touch = e.touches[0];
-      const x = touch.clientX - rect.left;
-      this.handleMouseMove(x);
+      const coords = InputHelper.getCanvasCoordinatesFromTouchEvent(e, this.canvas);
+      if (!coords) return;
+      this.handleMouseMove(coords.x);
     });
 
     this.canvas.addEventListener('touchend', (e) => {

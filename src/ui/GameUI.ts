@@ -9,10 +9,13 @@ import { GuessTheHigherUI } from '../minigames/guessTheHigher/GuessTheHigherUI';
 import { SimonDiceUI } from '../minigames/simonDice/SimonDiceUI';
 import { ParachuteUI } from '../minigames/parachute/ParachuteUI';
 import { MochiCookingUI } from '../minigames/mochiCooking/MochiCookingUI';
+import { MimitosGame } from '../minigames/mimitos/MimitosGame';
+import { MimitosUI } from '../minigames/mimitos/MimitosUI';
 import { Ingredient } from '../core/Ingredient';
 import { Settings } from '../core/Settings';
 import { SettingsUI } from './SettingsUI';
 import { FeedingRewards } from './FeedingRewards';
+import { InputHelper } from '../utils/InputHelper';
 
 export class GameUI {
   private canvas: HTMLCanvasElement;
@@ -33,6 +36,8 @@ export class GameUI {
   onFeedWithIngredient?: (ingredientId: string) => void;
   onPlayMinigame?: (minigameId: string, personality: string) => void;
   onStartCookingMinigame?: (ingredientId: string, tier: number) => void;
+  onRequestNotificationPermission?: () => Promise<NotificationPermission>;
+  onTestNotification?: () => void;
 
   // Estado de UI
   private currentMenu: 'feed' | 'play' | 'room' | 'settings' | null = null;
@@ -95,13 +100,16 @@ export class GameUI {
   ];
 
   // Estado del minijuego activo
-  private activeMinigame: TheButtonUI | EdgyBunBunUI | SimonDiceUI | GuessTheHigherUI | ParachuteUI | MochiCookingUI | null = null;
+  private activeMinigame: TheButtonUI | EdgyBunBunUI | SimonDiceUI | GuessTheHigherUI | ParachuteUI | MochiCookingUI | MimitosUI | null = null;
   private minigameRewards: TheButtonRewards | null = null;
   private showingRewards: boolean = false;
 
   // Feeding rewards
   private feedingRewards: FeedingRewards;
   private showingFeedingRewards: boolean = false;
+
+  // Zoom residual de mimitos (decay progresivo después de terminar)
+  private mimitosResidualZoom: number = 1.0;
 
   constructor(canvas: HTMLCanvasElement, pet: Pet, settings: Settings) {
     this.canvas = canvas;
@@ -110,6 +118,20 @@ export class GameUI {
     this.settings = settings;
     this.settingsUI = new SettingsUI(canvas, settings);
     this.feedingRewards = new FeedingRewards(canvas);
+
+    // Conectar callbacks de SettingsUI
+    this.settingsUI.onRequestNotificationPermission = async () => {
+      if (this.onRequestNotificationPermission) {
+        return await this.onRequestNotificationPermission();
+      }
+      return 'denied';
+    };
+
+    this.settingsUI.onTestNotification = () => {
+      if (this.onTestNotification) {
+        this.onTestNotification();
+      }
+    };
 
     // Aplicar filtro blanco y negro al canvas (compatible con móvil)
     this.canvas.style.filter = 'grayscale(100%)';
@@ -338,18 +360,13 @@ export class GameUI {
         return;
       }
 
-      const rect = this.canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-
+      const { x, y } = InputHelper.getCanvasCoordinatesFromMouse(e, this.canvas);
       this.handleClick(x, y);
     });
 
     // Drag para scroll horizontal de ingredientes y scroll vertical de settings
     this.canvas.addEventListener('mousedown', (e) => {
-      const rect = this.canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
+      const { x, y } = InputHelper.getCanvasCoordinatesFromMouse(e, this.canvas);
 
       if (this.currentMenu === 'feed') {
         const panelHeight = 310;
@@ -383,13 +400,11 @@ export class GameUI {
 
     this.canvas.addEventListener('mousemove', (e) => {
       if (this.isDraggingIngredients) {
-        const rect = this.canvas.getBoundingClientRect();
-        const x = e.clientX - rect.left;
+        const { x } = InputHelper.getCanvasCoordinatesFromMouse(e, this.canvas);
         const deltaX = this.dragStartX - x;
         this.ingredientScrollX = this.dragStartScrollX + deltaX;
       } else if (this.isDraggingSettings) {
-        const rect = this.canvas.getBoundingClientRect();
-        const y = e.clientY - rect.top;
+        const { y } = InputHelper.getCanvasCoordinatesFromMouse(e, this.canvas);
         const deltaY = this.settingsDragStartY - y;
         this.settingsScrollOffset = this.settingsDragStartScrollOffset + deltaY;
         // Clamp se hace en renderSettingsContent
@@ -407,15 +422,35 @@ export class GameUI {
     });
 
     this.canvas.addEventListener('touchstart', (e) => {
-      const rect = this.canvas.getBoundingClientRect();
-      const touch = e.touches[0];
-      const x = touch.clientX - rect.left;
-      const y = touch.clientY - rect.top;
+      const coords = InputHelper.getCanvasCoordinatesFromTouchEvent(e, this.canvas);
+      if (!coords) return;
+
+      const { x, y } = coords;
 
       // Guardar posición y tiempo inicial del touch
       this.touchStartX = x;
       this.touchStartY = y;
       this.touchStartTime = Date.now();
+
+      // IMPORTANTE: Prevenir comportamiento por defecto en touch para botones especiales
+      // (sleep screen, mimir button, settings button, etc.)
+      let shouldPreventDefault = false;
+
+      // Si estamos en sleep screen, siempre prevenir default
+      if (this.settings.sleep.isSleeping) {
+        shouldPreventDefault = true;
+      }
+
+      // Si estamos en main room con botón mimir visible, prevenir default
+      if (this.settings.sleep.isManual && !this.settings.sleep.isSleeping) {
+        const mimirX = 15;
+        const mimirY = this.canvas.height * 0.35;
+        const mimirSize = 55;
+        if (x >= mimirX && x <= mimirX + mimirSize &&
+            y >= mimirY && y <= mimirY + mimirSize) {
+          shouldPreventDefault = true;
+        }
+      }
 
       if (this.currentMenu === 'feed') {
         const panelHeight = 310;
@@ -426,10 +461,10 @@ export class GameUI {
         const gridHeight = 2 * (70 + 10);
 
         if (y >= gridStartY && y <= gridStartY + gridHeight) {
-          this.isDraggingIngredients = true;
+          // Solo PREPARAR para drag (el drag real se activará en touchmove)
           this.dragStartX = x;
           this.dragStartScrollX = this.ingredientScrollX;
-          e.preventDefault();
+          shouldPreventDefault = true;
         }
       } else if (this.currentMenu === 'settings') {
         const panelHeight = 500;
@@ -439,31 +474,60 @@ export class GameUI {
         const contentY = panelY + headerHeight;
         const contentHeight = panelHeight - headerHeight - closeBarHeight;
 
-        // Solo permitir drag en el área de contenido (no en header ni en barra de cierre)
+        // Solo PREPARAR para drag en el área de contenido (no activarlo aún)
+        // El drag real se activará en touchmove solo si el usuario mueve el dedo
         if (y >= contentY && y <= contentY + contentHeight) {
-          this.isDraggingSettings = true;
+          // Guardar posición inicial para detectar drag en touchmove
           this.settingsDragStartY = y;
           this.settingsDragStartScrollOffset = this.settingsScrollOffset;
-          e.preventDefault();
+          shouldPreventDefault = true;
         }
+      }
+
+      if (shouldPreventDefault) {
+        e.preventDefault();
       }
     });
 
     this.canvas.addEventListener('touchmove', (e) => {
       if (this.isDraggingIngredients) {
-        const rect = this.canvas.getBoundingClientRect();
-        const touch = e.touches[0];
-        const x = touch.clientX - rect.left;
-        const deltaX = this.dragStartX - x;
+        const coords = InputHelper.getCanvasCoordinatesFromTouchEvent(e, this.canvas);
+        if (!coords) return;
+        const deltaX = this.dragStartX - coords.x;
         this.ingredientScrollX = this.dragStartScrollX + deltaX;
         e.preventDefault();
       } else if (this.isDraggingSettings) {
-        const rect = this.canvas.getBoundingClientRect();
-        const touch = e.touches[0];
-        const y = touch.clientY - rect.top;
-        const deltaY = this.settingsDragStartY - y;
+        const coords = InputHelper.getCanvasCoordinatesFromTouchEvent(e, this.canvas);
+        if (!coords) return;
+        const deltaY = this.settingsDragStartY - coords.y;
         this.settingsScrollOffset = this.settingsDragStartScrollOffset + deltaY;
         e.preventDefault();
+      } else if (this.currentMenu === 'feed' && this.dragStartX !== 0) {
+        // Si estamos en feed y se guardó una posición inicial, verificar si el usuario está arrastrando
+        const coords = InputHelper.getCanvasCoordinatesFromTouchEvent(e, this.canvas);
+        if (!coords) return;
+
+        // Calcular distancia desde el punto inicial
+        const distance = Math.abs(coords.x - this.dragStartX);
+
+        // Si se movió más de 10px, activar drag
+        if (distance > 10) {
+          this.isDraggingIngredients = true;
+          e.preventDefault();
+        }
+      } else if (this.currentMenu === 'settings' && this.settingsDragStartY !== 0) {
+        // Si estamos en settings y se guardó una posición inicial, verificar si el usuario está arrastrando
+        const coords = InputHelper.getCanvasCoordinatesFromTouchEvent(e, this.canvas);
+        if (!coords) return;
+
+        // Calcular distancia desde el punto inicial
+        const distance = Math.abs(coords.y - this.settingsDragStartY);
+
+        // Si se movió más de 10px, activar drag
+        if (distance > 10) {
+          this.isDraggingSettings = true;
+          e.preventDefault();
+        }
       }
     });
 
@@ -472,13 +536,14 @@ export class GameUI {
 
       this.isDraggingIngredients = false;
       this.isDraggingSettings = false;
+      this.dragStartX = 0; // Resetear para el siguiente touch
+      this.settingsDragStartY = 0; // Resetear para el siguiente touch
 
       // Si no estaba dragging, es un tap → llamar handleClick()
-      if (!wasDragging && e.changedTouches && e.changedTouches.length > 0) {
-        const rect = this.canvas.getBoundingClientRect();
-        const touch = e.changedTouches[0];
-        const x = touch.clientX - rect.left;
-        const y = touch.clientY - rect.top;
+      if (!wasDragging) {
+        const coords = InputHelper.getCanvasCoordinatesFromChangedTouch(e, this.canvas);
+        if (!coords) return;
+        const { x, y } = coords;
 
         // Verificar que el touch no se movió mucho (máximo 10px)
         const distance = Math.sqrt(
@@ -489,8 +554,17 @@ export class GameUI {
         // Verificar que fue rápido (máximo 300ms)
         const duration = Date.now() - this.touchStartTime;
 
+        // RELAJAR condiciones en sleep screen (dedos más gruesos en móvil)
+        const maxDistance = this.settings.sleep.isSleeping ? 30 : 10;
+        const maxDuration = this.settings.sleep.isSleeping ? 500 : 300;
+
+        // LOG de debug (solo en sleep screen)
+        if (this.settings.sleep.isSleeping) {
+          console.log(`[Sleep] touchend: distance=${distance.toFixed(1)}px (max ${maxDistance}px), duration=${duration}ms (max ${maxDuration}ms)`);
+        }
+
         // Si es un tap (poco movimiento y rápido), llamar handleClick
-        if (distance < 10 && duration < 300) {
+        if (distance < maxDistance && duration < maxDuration) {
           // Setear flag para evitar que el evento click también se dispare
           this.justHandledTouch = true;
 
@@ -501,7 +575,14 @@ export class GameUI {
 
           this.handleClick(x, y);
           e.preventDefault(); // Prevenir el click sintético que algunos navegadores generan
+        } else if (this.settings.sleep.isSleeping) {
+          console.log(`[Sleep] ❌ touchend IGNORED: conditions not met`);
         }
+      }
+
+      // CRÍTICO: Siempre prevenir default en sleep screen para evitar comportamiento extraño
+      if (this.settings.sleep.isSleeping) {
+        e.preventDefault();
       }
     });
   }
@@ -563,6 +644,8 @@ export class GameUI {
 
     // PRIORIDAD 2: Pantalla de sleep
     if (this.settings.sleep.isSleeping) {
+      console.log(`[Sleep] Touch at (${x.toFixed(1)}, ${y.toFixed(1)})`);
+
       // Click en botón despertar (izquierda, misma posición que mimir)
       const wakeButton = this.settingsCache.get('Boton despertar.png');
       const wakeX = 15;
@@ -577,8 +660,11 @@ export class GameUI {
         wakeW = wakeH * spriteAspect;
       }
 
+      console.log(`[Sleep] Button area: (${wakeX}, ${wakeY}) to (${wakeX + wakeW}, ${wakeY + wakeH}), size: ${wakeW.toFixed(1)}x${wakeH.toFixed(1)}`);
+
       if (x >= wakeX && x <= wakeX + wakeW &&
           y >= wakeY && y <= wakeY + wakeH) {
+        console.log('[Sleep] ✅ Wake button clicked!');
         this.settings.sleep.wakeUp();
         console.log('[Settings] Pet woken up');
 
@@ -586,6 +672,8 @@ export class GameUI {
         if (this.settings.sleep.isAutomatic) {
           this.showFeedback('wake_auto_warning');
         }
+      } else {
+        console.log('[Sleep] ❌ Click OUTSIDE wake button area');
       }
       return;
     }
@@ -725,16 +813,23 @@ export class GameUI {
       }
     }
 
-    // Curar enfermedad - click en la criatura
-    if (this.pet.illness.isCurrentlyIll()) {
-      // Area de la criatura (centro)
-      const centerX = this.canvas.width / 2;
-      const centerY = 300;
-      const clickRadius = 100; // Radio de 100px alrededor de la criatura
+    // Area de la criatura (centro) - para mimitos o curar
+    const centerX = this.canvas.width / 2;
+    const centerY = 300;
+    const clickRadius = 100; // Radio de 100px alrededor de la criatura
+    const distance = Math.sqrt((x - centerX) ** 2 + (y - centerY) ** 2);
 
-      const distance = Math.sqrt((x - centerX) ** 2 + (y - centerY) ** 2);
-      if (distance < clickRadius) {
+    if (distance < clickRadius) {
+      // Prioridad 1: Iniciar mimitos si está demandando
+      if (this.pet.isDemandingMimitos) {
+        this.launchMimitosMinigame();
+        return;
+      }
+
+      // Prioridad 2: Curar enfermedad
+      if (this.pet.illness.isCurrentlyIll()) {
         if (this.onCure) this.onCure();
+        return;
       }
     }
   }
@@ -1004,7 +1099,12 @@ export class GameUI {
     // Actualizar animación del menú
     this.updateMenuAnimation();
 
-    // Si hay un minijuego activo, SOLO renderizar el minijuego (oculta el main room)
+    // Decay del zoom residual de mimitos (progresivo después de terminar)
+    if (this.mimitosResidualZoom > 1.0) {
+      this.mimitosResidualZoom = Math.max(1.0, this.mimitosResidualZoom - 0.3 * (1/60)); // Mismo decay que durante el juego
+    }
+
+    // Si hay un minijuego activo
     if (this.activeMinigame) {
       const minigame = this.activeMinigame; // Guardar referencia antes de update
 
@@ -1013,11 +1113,17 @@ export class GameUI {
         (minigame as any).update(1/60); // Aproximadamente 60 FPS
       }
 
-      // Verificar que el minigame sigue activo después del update
-      if (this.activeMinigame) {
-        this.activeMinigame.render();
+      // CASO ESPECIAL: Mimitos se renderiza SOBRE el main room
+      const isMimitos = this.activeMinigame instanceof MimitosUI;
+
+      if (!isMimitos) {
+        // Otros minigames: SOLO renderizar el minijuego (oculta el main room)
+        if (this.activeMinigame) {
+          this.activeMinigame.render();
+        }
+        return; // No renderizar nada más
       }
-      return; // No renderizar nada más
+      // Si es mimitos, continuar y renderizar main room + overlay después
     }
 
     // Si está durmiendo, mostrar pantalla de sleep
@@ -1027,46 +1133,78 @@ export class GameUI {
     }
 
     // Renderizar interfaz principal (main room)
+
+    // Aplicar zoom si hay mimitos activo O hay zoom residual (afecta a room + pet)
+    const isMimitosActive = this.activeMinigame instanceof MimitosUI;
+    let currentZoom = 1.0;
+
+    if (isMimitosActive) {
+      const mimitosUI = this.activeMinigame as MimitosUI;
+      currentZoom = mimitosUI.currentZoom;
+    } else if (this.mimitosResidualZoom > 1.0) {
+      currentZoom = this.mimitosResidualZoom;
+    }
+
+    if (currentZoom > 1.0) {
+      this.ctx.save();
+
+      // Aplicar zoom desde el centro
+      const centerX = this.canvas.width / 2;
+      const centerY = this.canvas.height / 2;
+      this.ctx.translate(centerX, centerY);
+      this.ctx.scale(currentZoom, currentZoom);
+      this.ctx.translate(-centerX, -centerY);
+    }
+
     // Renderizar fondo de room
     this.renderRoom();
 
     // Renderizar pet
     this.renderPet();
 
-    // Renderizar indicadores de necesidades
-    this.renderNeedsIndicators();
+    // Restaurar zoom si se aplicó
+    if (currentZoom > 1.0) {
+      this.ctx.restore();
+    }
 
-    // Renderizar barra de crecimiento
+    // Renderizar barra de crecimiento SIEMPRE (incluso durante mimitos)
     this.renderGrowthBar();
 
-    // Renderizar botones de acción
-    this.renderActionButtons();
+    // Si NO hay mimitos activo, renderizar toda la UI normal
+    const isMimitos = this.activeMinigame instanceof MimitosUI;
+    if (!isMimitos) {
+      // Renderizar indicadores de necesidades
+      this.renderNeedsIndicators();
 
-    // Renderizar debug panel
-    this.renderDebugPanel();
+      // Renderizar botones de acción
+      this.renderActionButtons();
 
-    // Renderizar botón de settings DESPUÉS del debug (para que esté encima)
-    this.renderSettingsButton();
+      // Renderizar debug panel
+      this.renderDebugPanel();
 
-    // Renderizar botón mimir (solo en modo manual)
-    this.renderMimirButton();
+      // Renderizar botón de settings DESPUÉS del debug (para que esté encima)
+      this.renderSettingsButton();
 
-    // Renderizar estados
-    this.renderStateIndicators();
+      // Renderizar botón mimir (solo en modo manual)
+      this.renderMimirButton();
 
-    // Renderizar caca si existe (solo si NO está muerto)
-    if (this.pet.poop.hasPoopedNow() && this.pet.stage !== LifeStage.Dead) {
-      this.renderPoop();
-    }
+      // Renderizar estados
+      this.renderStateIndicators();
 
-    // Renderizar feedback si existe
-    if (this.feedbackType) {
-      this.renderFeedback();
-    }
+      // Renderizar caca si existe (solo si NO está muerto)
+      if (this.pet.poop.hasPoopedNow() && this.pet.stage !== LifeStage.Dead) {
+        this.renderPoop();
+      }
 
-    // Renderizar menú desplegable si está activo
-    if (this.currentMenu) {
-      this.renderMenuPanel();
+      // Renderizar feedback si existe
+      if (this.feedbackType) {
+        this.renderFeedback();
+      }
+
+      // Renderizar menú desplegable si está activo
+      if (this.currentMenu) {
+        this.renderMenuPanel();
+      }
     }
 
     // Renderizar recompensas flotantes SOBRE el main room (si se están mostrando)
@@ -1077,6 +1215,11 @@ export class GameUI {
     // Renderizar recompensas de alimentación SOBRE el main room (si se están mostrando)
     if (this.showingFeedingRewards) {
       this.feedingRewards.render();
+    }
+
+    // Renderizar overlay de mimitos SOBRE el main room (si está activo)
+    if (this.activeMinigame instanceof MimitosUI) {
+      this.activeMinigame.render();
     }
 
     // Los popups de settings ahora se renderizan dentro de SettingsUI
@@ -1745,6 +1888,11 @@ export class GameUI {
 
     if (this.pet.illness.isCurrentlyIll()) {
       this.ctx.fillText('🤒', x, y);
+      y += 30;
+    }
+
+    if (this.pet.isDemandingMimitos) {
+      this.ctx.fillText('💕', x, y);
       y += 30;
     }
   }
@@ -2724,6 +2872,47 @@ export class GameUI {
 
     // Resetear selección de ingrediente
     this.selectedIngredient = 'neutral';
+  }
+
+  private launchMimitosMinigame(): void {
+    // Resetear zoom residual (importante para que funcione en múltiples sesiones)
+    this.mimitosResidualZoom = 1.0;
+
+    // Crear game + UI
+    const game = new MimitosGame();
+    this.activeMinigame = new MimitosUI(
+      this.canvas,
+      this.ctx,
+      game,
+      this.pet,
+      () => {
+        this.handleMimitosEnd(game.getTapsCount());
+      }
+    );
+
+    console.log('[GameUI] Mimitos minigame launched!');
+  }
+
+  private handleMimitosEnd(tapsCount: number): void {
+    // Capturar el zoom actual antes de cerrar el minigame (para decay progresivo)
+    if (this.activeMinigame instanceof MimitosUI) {
+      this.mimitosResidualZoom = this.activeMinigame.currentZoom;
+
+      // Limpiar event listeners antes de cerrar
+      this.activeMinigame.cleanup();
+    }
+
+    // Cerrar el minijuego
+    this.activeMinigame = null;
+
+    console.log(`[GameUI] Mimitos completed with ${tapsCount} taps`);
+
+    // NO aplicamos growth aquí, ya se aplicó en cada tap en tiempo real
+
+    // Reset estado de mimitos
+    this.pet.endMimitos();
+
+    console.log(`[GameUI] +${(tapsCount * 0.2).toFixed(1)}% growth from mimitos`);
   }
 
   private async showFeedingRewards(ingredient: Ingredient): Promise<void> {

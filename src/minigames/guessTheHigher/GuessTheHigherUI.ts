@@ -2,6 +2,7 @@
 import { Pet } from '../../core/Pet';
 import { GuessTheHigherGame, GuessTheHigherGameState } from './GuessTheHigherGame';
 import { LifeStage } from '../../core/LifeStage';
+import { InputHelper } from '../../utils/InputHelper';
 
 export class GuessTheHigherUI {
   private canvas: HTMLCanvasElement;
@@ -78,14 +79,24 @@ export class GuessTheHigherUI {
   }
 
   private setupEventListeners(): void {
-    this.canvas.addEventListener('click', (e) => this.handleClick(e));
+    this.canvas.addEventListener('click', (e) => {
+      const { x, y } = InputHelper.getCanvasCoordinatesFromMouse(e, this.canvas);
+      e.stopPropagation(); // Prevenir propagación al GameUI
+      this.handleClick(x, y);
+    });
+
+    // Touch events for mobile
+    this.canvas.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      e.stopPropagation(); // Prevenir propagación al GameUI
+      const coords = InputHelper.getCanvasCoordinatesFromTouchEvent(e, this.canvas);
+      if (!coords) return;
+      this.handleClick(coords.x, coords.y);
+    });
   }
 
-  private handleClick(e: MouseEvent): void {
+  private handleClick(x: number, y: number): void {
     const state = this.game.getState();
-    const rect = this.canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
 
     if (state.state === 'waiting') {
       // Click en botón de inicio
@@ -96,12 +107,9 @@ export class GuessTheHigherUI {
 
       if (x >= buttonX && x <= buttonX + buttonW &&
           y >= buttonY && y <= buttonY + buttonH) {
-        e.stopPropagation(); // Prevenir propagación al GameUI
         this.game.start();
       }
     } else if (state.state === 'playing' && state.waitingForChoice) {
-      // Prevenir propagación durante el juego
-      e.stopPropagation();
 
       // Botones Higher/Lower
       const buttonY = 520;
@@ -126,16 +134,13 @@ export class GuessTheHigherUI {
       }
     } else if (state.state === 'finished') {
       // Click en botón "Ver Recompensas"
-      const panelY = 150;
-      const panelH = 300;
       const buttonX = this.canvas.width / 2 - 100;
-      const buttonY = panelY + panelH - 80;
+      const buttonY = 400; // Coincide exactamente con renderizado (centerY + 200)
       const buttonW = 200;
       const buttonH = 50;
 
       if (x >= buttonX && x <= buttonX + buttonW &&
           y >= buttonY && y <= buttonY + buttonH) {
-        e.stopPropagation(); // CRÍTICO: Prevenir propagación al GameUI
         this.handleGameEnd();
       }
     }
@@ -348,24 +353,24 @@ export class GuessTheHigherUI {
       this.ctx.drawImage(this.dealerTableSprite, tableX, tableY, tableWidth, tableHeight);
     }
 
-    // Carta del jugador (izquierda)
+    // Carta del jugador (izquierda) - Más arriba para no colisionar con mascota
     if (state.playerCard) {
       this.renderCard(
         state.playerCard,
         120,
-        280,
+        180, // Subida de 280 a 180 (100px más arriba)
         100,
         140,
         false // No está siendo revelada
       );
     }
 
-    // Carta del oponente (derecha)
+    // Carta del oponente (derecha) - Más arriba para no colisionar con mascota
     if (state.opponentCard) {
       this.renderCard(
         state.opponentCard,
         this.canvas.width - 120 - 100,
-        280,
+        180, // Subida de 280 a 180 (100px más arriba)
         100,
         140,
         this.revealingCard // Animación de reveal
@@ -378,14 +383,14 @@ export class GuessTheHigherUI {
     // Botones Lower y Higher
     this.renderButtons(state);
 
-    // Feedback visual (correcto/incorrecto)
+    // Feedback visual (correcto/incorrecto) - Más arriba para mejor visibilidad
     if (state.lastGuessCorrect !== null && !state.waitingForChoice) {
       const feedbackText = state.lastGuessCorrect ? '✓ Correcto' : '✗ Incorrecto';
 
       this.ctx.fillStyle = '#000';
       this.ctx.font = 'bold 32px Arial';
       this.ctx.textAlign = 'center';
-      this.ctx.fillText(feedbackText, this.canvas.width / 2, 240);
+      this.ctx.fillText(feedbackText, this.canvas.width / 2, 150); // Subido de 240 a 150
     }
 
     this.ctx.restore();

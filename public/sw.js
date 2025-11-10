@@ -1,6 +1,6 @@
 // Tamagotchi Service Worker
 // Versión del cache (cambiar para forzar actualización)
-const CACHE_VERSION = 'tamagotchi-v1';
+const CACHE_VERSION = 'tamagotchi-v2'; // Incrementado para notificaciones
 const CACHE_NAME = `${CACHE_VERSION}`;
 
 // Recursos para cachear en la instalación
@@ -124,6 +124,37 @@ self.addEventListener('message', (event) => {
     console.log('[SW] Skipping waiting...');
     self.skipWaiting();
   }
+});
+
+// ============ NOTIFICACIONES ============
+// Event listener para cuando se hace click en una notificación
+self.addEventListener('notificationclick', (event) => {
+  console.log('[SW] Notification clicked:', event.notification.tag);
+
+  event.notification.close();
+
+  // Abrir o enfocar la app
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true })
+      .then((clientList) => {
+        // Si ya hay una ventana abierta, enfocarla
+        for (let i = 0; i < clientList.length; i++) {
+          const client = clientList[i];
+          if ('focus' in client) {
+            return client.focus();
+          }
+        }
+        // Si no, abrir nueva ventana
+        if (clients.openWindow) {
+          return clients.openWindow('/');
+        }
+      })
+  );
+});
+
+// Event listener para cuando se cierra una notificación
+self.addEventListener('notificationclose', (event) => {
+  console.log('[SW] Notification closed:', event.notification.tag);
 });
 
 console.log('[SW] Service Worker loaded');

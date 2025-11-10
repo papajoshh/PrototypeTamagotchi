@@ -33,6 +33,10 @@ export class SettingsUI {
   // Estado del slider de música (para drag)
   private isDraggingMusicSlider: boolean = false;
 
+  // Callbacks para notificaciones
+  onRequestNotificationPermission?: () => Promise<NotificationPermission>;
+  onTestNotification?: () => void;
+
   constructor(canvas: HTMLCanvasElement, settings: Settings) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d')!;
@@ -187,6 +191,8 @@ export class SettingsUI {
     // Notificaciones section
     totalHeight += 30 + 15; // Header
     totalHeight += 35 + 10 + 35 + 35 + 35 + 35; // Toggle general + línea + 4 toggles (hambre, illness, poop, evolution)
+    totalHeight += 10 + 1 + 10; // Línea divisoria
+    totalHeight += 50 + 50; // Dos botones (permitir + probar)
     totalHeight += 15 + 15; // Padding
 
     return totalHeight;
@@ -275,6 +281,23 @@ export class SettingsUI {
 
       offsetY += this.renderSettingRow(sectionX + 15, sectionY + offsetY, width - 30,
         'Evolución próxima', this.settings.notifications.evolutionEnabled, scrollOffset, 'notif-evolution');
+
+      // Línea divisoria
+      offsetY += 10;
+      this.ctx.strokeStyle = '#000';
+      this.ctx.lineWidth = 1;
+      this.ctx.beginPath();
+      this.ctx.moveTo(sectionX + 15, sectionY + offsetY);
+      this.ctx.lineTo(sectionX + width - 15, sectionY + offsetY);
+      this.ctx.stroke();
+      offsetY += 10;
+
+      // Botones de gestión de notificaciones
+      offsetY += this.renderSettingButton(sectionX + 15, sectionY + offsetY, width - 30,
+        'Permitir notificaciones', '🔔', scrollOffset, 'request-notif-permission');
+
+      offsetY += this.renderSettingButton(sectionX + 15, sectionY + offsetY, width - 30,
+        'Probar notificación', '🧪', scrollOffset, 'test-notification');
 
       return offsetY;
     });
@@ -688,6 +711,33 @@ export class SettingsUI {
       case 'sleep-schedule':
         this.openSleepSchedulePopup();
         break;
+      case 'request-notif-permission':
+        this.requestNotificationPermission();
+        break;
+      case 'test-notification':
+        this.testNotification();
+        break;
+    }
+  }
+
+  private async requestNotificationPermission() {
+    if (this.onRequestNotificationPermission) {
+      const permission = await this.onRequestNotificationPermission();
+      console.log('[SettingsUI] Notification permission:', permission);
+
+      // Mostrar feedback al usuario
+      if (permission === 'granted') {
+        alert('✅ Notificaciones permitidas correctamente');
+      } else if (permission === 'denied') {
+        alert('❌ Has bloqueado las notificaciones. Puedes activarlas desde la configuración del navegador.');
+      }
+    }
+  }
+
+  private testNotification() {
+    if (this.onTestNotification) {
+      this.onTestNotification();
+      console.log('[SettingsUI] Test notification sent');
     }
   }
 

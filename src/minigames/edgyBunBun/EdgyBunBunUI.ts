@@ -2,6 +2,7 @@
 import { Pet } from '../../core/Pet';
 import { EdgyBunBunGame, EdgyBunBunGameState, Side, Level } from './EdgyBunBunGame';
 import { LifeStage } from '../../core/LifeStage';
+import { InputHelper } from '../../utils/InputHelper';
 
 export class EdgyBunBunUI {
   private canvas: HTMLCanvasElement;
@@ -77,17 +78,27 @@ export class EdgyBunBunUI {
 
   private setupEventListeners(): void {
     // Click/tap en mitades de la pantalla
-    this.canvas.addEventListener('click', (e) => this.handleClick(e));
+    this.canvas.addEventListener('click', (e) => {
+      const { x, y } = InputHelper.getCanvasCoordinatesFromMouse(e, this.canvas);
+      e.stopPropagation(); // Prevenir propagación al GameUI
+      this.handleClick(x, y);
+    });
+
+    // Touch events for mobile
+    this.canvas.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      e.stopPropagation(); // Prevenir propagación al GameUI
+      const coords = InputHelper.getCanvasCoordinatesFromTouchEvent(e, this.canvas);
+      if (!coords) return;
+      this.handleClick(coords.x, coords.y);
+    });
 
     // Control con teclado (flechas izquierda/derecha)
     window.addEventListener('keydown', (e) => this.handleKeyDown(e));
   }
 
-  private handleClick(e: MouseEvent): void {
+  private handleClick(x: number, y: number): void {
     const state = this.game.getState();
-    const rect = this.canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
 
     if (state.state === 'waiting') {
       // Click en botón de inicio
@@ -98,28 +109,21 @@ export class EdgyBunBunUI {
 
       if (x >= buttonX && x <= buttonX + buttonW &&
           y >= buttonY && y <= buttonY + buttonH) {
-        e.stopPropagation(); // Prevenir propagación al GameUI
         this.game.start();
       }
     } else if (state.state === 'playing') {
-      // Prevenir propagación durante el juego
-      e.stopPropagation();
-
       // Click en mitades de pantalla para saltar
       const side: Side = x < this.canvas.width / 2 ? 'left' : 'right';
       this.jump(side);
     } else if (state.state === 'finished') {
       // Click en botón "Ver Recompensas"
-      const panelY = 150;
-      const panelH = 300;
       const buttonX = this.canvas.width / 2 - 100;
-      const buttonY = panelY + panelH - 80; // Sincronizado con renderFinishedScreen
+      const buttonY = 400; // Coincide exactamente con renderizado (centerY + 200)
       const buttonW = 200;
       const buttonH = 50;
 
       if (x >= buttonX && x <= buttonX + buttonW &&
           y >= buttonY && y <= buttonY + buttonH) {
-        e.stopPropagation(); // CRÍTICO: Prevenir propagación al GameUI
         this.handleGameEnd();
       }
     }
