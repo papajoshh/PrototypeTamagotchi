@@ -87,8 +87,8 @@ export class MimitosUI {
       // Tap durante el juego
       this.game.tap();
       this.onTap(x, y);
-    } else if (state.phase === 'finished') {
-      // Click para terminar
+    } else if (state.phase === 'finished' && this.game.canClose()) {
+      // Click para terminar (solo si pasó el delay)
       this.handleGameEnd();
     }
   }

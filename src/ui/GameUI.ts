@@ -8,7 +8,7 @@ import { EdgyBunBunUI } from '../minigames/edgyBunBun/EdgyBunBunUI';
 import { GuessTheHigherUI } from '../minigames/guessTheHigher/GuessTheHigherUI';
 import { SimonDiceUI } from '../minigames/simonDice/SimonDiceUI';
 import { ParachuteUI } from '../minigames/parachute/ParachuteUI';
-import { MochiCookingUI } from '../minigames/mochiCooking/MochiCookingUI';
+import { CookingUI } from '../minigames/cooking/CookingUI';
 import { MimitosGame } from '../minigames/mimitos/MimitosGame';
 import { MimitosUI } from '../minigames/mimitos/MimitosUI';
 import { Ingredient } from '../core/Ingredient';
@@ -100,7 +100,7 @@ export class GameUI {
   ];
 
   // Estado del minijuego activo
-  private activeMinigame: TheButtonUI | EdgyBunBunUI | SimonDiceUI | GuessTheHigherUI | ParachuteUI | MochiCookingUI | MimitosUI | null = null;
+  private activeMinigame: TheButtonUI | EdgyBunBunUI | SimonDiceUI | GuessTheHigherUI | ParachuteUI | CookingUI | MimitosUI | null = null;
   private minigameRewards: TheButtonRewards | null = null;
   private showingRewards: boolean = false;
 
@@ -110,6 +110,17 @@ export class GameUI {
 
   // Zoom residual de mimitos (decay progresivo después de terminar)
   private mimitosResidualZoom: number = 1.0;
+
+  // Sistema de Servicios Sociales
+  private illnessCache: Map<string, HTMLImageElement> = new Map();
+  private ambulanceAnimationActive: boolean = false;
+  private ambulanceAnimationTimer: number = 0;
+  private readonly AMBULANCE_DURATION = 3000; // 3 segundos
+  private ambulanceShakeOffset: number = 0;
+  private showingFirstWarning: boolean = false;
+  private firstWarningStep: number = 1; // 1 = "PRIMER AVISO", 2 = "que no vuelva a ocurrir"
+  private showingSocialServicesGameOver: boolean = false;
+  private ssGameOverReason: 'second_illness' | 'hunger_death' = 'second_illness';
 
   constructor(canvas: HTMLCanvasElement, pet: Pet, settings: Settings) {
     this.canvas = canvas;
@@ -253,6 +264,15 @@ export class GameUI {
       const img = new Image();
       img.src = `/assets/styles/${style}.png`;
       this.styleIconCache.set(style, img);
+    });
+
+    // Preload illness/social services sprites
+    const illnessSprites = ['ambulancia.png', 'Servicios_Sociales.png', 'bubble_comic.png'];
+    illnessSprites.forEach(sprite => {
+      const img = new Image();
+      img.src = `/assets/illness/${sprite}`;
+      const key = sprite.replace('.png', '');
+      this.illnessCache.set(key, img);
     });
 
     // Preload settings sprites
@@ -615,6 +635,31 @@ export class GameUI {
   handleClick(x: number, y: number) {
     // PRIORIDAD 0: Si hay minijuego activo, NO procesar clicks del main room
     if (this.activeMinigame) {
+      return;
+    }
+
+    // PRIORIDAD 0.5: Pantallas de Servicios Sociales (máxima prioridad)
+    if (this.showingFirstWarning) {
+      // Tap en cualquier lugar de la pantalla
+      if (this.firstWarningStep === 1) {
+        // Primer mensaje → Avanzar al segundo
+        this.firstWarningStep = 2;
+        console.log('[GameUI] First warning step 1 → 2');
+      } else {
+        // Segundo mensaje → Cerrar y activar SS
+        this.showingFirstWarning = false;
+        this.firstWarningStep = 1; // Reset para próxima vez (si hay)
+        this.pet.socialServicesActivated = true;
+        console.log('[GameUI] First warning dismissed, Social Services activated');
+      }
+      return; // Bloquear otros clicks mientras está el warning
+    }
+
+    if (this.showingSocialServicesGameOver) {
+      // Reset después de SS Game Over (tap en cualquier lugar)
+      this.showingSocialServicesGameOver = false;
+      this.pet.resetAfterSocialServices();
+      console.log('[GameUI] Social Services Game Over dismissed, pet reset to Egg');
       return;
     }
 
@@ -1099,9 +1144,28 @@ export class GameUI {
     // Actualizar animación del menú
     this.updateMenuAnimation();
 
+    // Actualizar animación de ambulancia
+    this.updateAmbulanceAnimation(1/60);
+
     // Decay del zoom residual de mimitos (progresivo después de terminar)
     if (this.mimitosResidualZoom > 1.0) {
       this.mimitosResidualZoom = Math.max(1.0, this.mimitosResidualZoom - 0.3 * (1/60)); // Mismo decay que durante el juego
+    }
+
+    // PRIORIDAD MÁXIMA: Pantallas de Servicios Sociales (bloquean TODO)
+    if (this.ambulanceAnimationActive) {
+      this.renderAmbulanceAnimation();
+      return; // No renderizar nada más
+    }
+
+    if (this.showingFirstWarning) {
+      this.renderFirstWarning();
+      return; // No renderizar nada más
+    }
+
+    if (this.showingSocialServicesGameOver) {
+      this.renderSocialServicesGameOver();
+      return; // No renderizar nada más
     }
 
     // Si hay un minijuego activo
@@ -1161,6 +1225,11 @@ export class GameUI {
 
     // Renderizar pet
     this.renderPet();
+
+    // Renderizar Servicios Sociales "watching" si está activo (dentro del zoom)
+    if (this.pet.socialServicesWatching) {
+      this.renderSocialServicesWatching();
+    }
 
     // Restaurar zoom si se aplicó
     if (currentZoom > 1.0) {
@@ -2728,7 +2797,8 @@ export class GameUI {
   // Métodos para minijuegos
   launchCookingMinigame(ingredientId: string, tier: number): void {
     console.log(`[GameUI] Launching cooking minigame with ingredient ${ingredientId} (tier ${tier})`);
-    this.activeMinigame = new MochiCookingUI(this.canvas, this.pet, tier, ingredientId);
+    this.activeMinigame = new CookingUI(this.canvas, this.pet, tier, ingredientId);
+    this.activeMinigame.setPetSprite(this.getSpriteForPet());
     this.activeMinigame.onGameEnd = (success) => {
       this.handleCookingMinigameEnd(ingredientId, success);
     };
@@ -2987,4 +3057,224 @@ export class GameUI {
 
   // ============ SETTINGS SYSTEM ============
   // TODO: Código de settings movido a SettingsUI.ts
+
+  // ============ SOCIAL SERVICES SYSTEM ============
+
+  private updateAmbulanceAnimation(deltaTime: number) {
+    if (!this.ambulanceAnimationActive) return;
+
+    this.ambulanceAnimationTimer += deltaTime * 1000; // Convert to ms
+
+    // Stop motion shake: alternate offset cada 100ms
+    const shakeInterval = 100; // ms
+    const shakePhase = Math.floor(this.ambulanceAnimationTimer / shakeInterval) % 2;
+    this.ambulanceShakeOffset = shakePhase === 0 ? -5 : 5;
+
+    // Terminar animación después de AMBULANCE_DURATION
+    if (this.ambulanceAnimationTimer >= this.AMBULANCE_DURATION) {
+      this.ambulanceAnimationActive = false;
+      this.ambulanceAnimationTimer = 0;
+      this.ambulanceShakeOffset = 0;
+
+      // Auto-curar al pet
+      this.pet.cure();
+      console.log('[GameUI] Ambulance animation finished. Pet cured.');
+
+      // Mostrar primer aviso
+      this.showFirstWarning();
+    }
+  }
+
+  private renderAmbulanceAnimation() {
+    this.ctx.save();
+
+    // Pantalla blanca completamente
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+    // Ambulancia con shake (stop motion)
+    const ambulance = this.illnessCache.get('ambulancia');
+    if (ambulance && ambulance.complete) {
+      const targetWidth = 200;
+      const targetHeight = (ambulance.height / ambulance.width) * targetWidth;
+      const x = (this.canvas.width - targetWidth) / 2;
+      const y = (this.canvas.height - targetHeight) / 2 + this.ambulanceShakeOffset;
+
+      this.ctx.drawImage(ambulance, x, y, targetWidth, targetHeight);
+    }
+
+    this.ctx.restore();
+  }
+
+  private renderFirstWarning() {
+    this.ctx.save();
+
+    // Renderizar main room de fondo
+    this.renderRoom();
+    this.renderPet();
+
+    // Servicios Sociales a la derecha y arriba (más pequeño, profundidad)
+    const ssSprite = this.illnessCache.get('Servicios_Sociales');
+    const targetWidth = 100; // Más pequeño
+    const targetHeight = ssSprite && ssSprite.complete ? (ssSprite.height / ssSprite.width) * targetWidth : 150;
+    const ssX = this.canvas.width * 0.65; // Derecha
+    const ssY = this.canvas.height * 0.25; // Arriba
+
+    if (ssSprite && ssSprite.complete) {
+      this.ctx.save();
+
+      // Flipear horizontalmente (mirar a la izquierda)
+      this.ctx.translate(ssX + targetWidth / 2, ssY + targetHeight / 2);
+      this.ctx.scale(-1, 1);
+      this.ctx.translate(-(ssX + targetWidth / 2), -(ssY + targetHeight / 2));
+
+      this.ctx.drawImage(ssSprite, ssX, ssY, targetWidth, targetHeight);
+      this.ctx.restore();
+    }
+
+    // Bocadillo con texto según el step
+    const bubble = this.illnessCache.get('bubble_comic');
+    if (bubble && bubble.complete) {
+      const bubbleWidth = 200;
+      const bubbleHeight = (bubble.height / bubble.width) * bubbleWidth;
+      const bubbleX = this.canvas.width * 0.35;
+      const bubbleY = this.canvas.height * 0.10; // Subido un poco (de 0.15 a 0.10)
+
+      this.ctx.drawImage(bubble, bubbleX, bubbleY, bubbleWidth, bubbleHeight);
+
+      // Texto según el step
+      this.ctx.font = 'bold 16px Arial';
+      this.ctx.fillStyle = '#000';
+      this.ctx.textAlign = 'center';
+
+      if (this.firstWarningStep === 1) {
+        // Mensaje 1: "PRIMER AVISO"
+        this.ctx.fillText('PRIMER', bubbleX + bubbleWidth / 2, bubbleY + bubbleHeight / 2 - 10);
+        this.ctx.fillText('AVISO', bubbleX + bubbleWidth / 2, bubbleY + bubbleHeight / 2 + 10);
+      } else {
+        // Mensaje 2: "que no vuelva a ocurrir"
+        this.ctx.font = 'bold 14px Arial';
+        this.ctx.fillText('que no vuelva', bubbleX + bubbleWidth / 2, bubbleY + bubbleHeight / 2 - 10);
+        this.ctx.fillText('a ocurrir', bubbleX + bubbleWidth / 2, bubbleY + bubbleHeight / 2 + 10);
+      }
+    }
+
+    // Instrucción para tapear
+    this.ctx.font = '12px Arial';
+    this.ctx.fillStyle = '#666';
+    this.ctx.textAlign = 'center';
+    this.ctx.fillText('(tap en toda la pantalla)', this.canvas.width / 2, this.canvas.height * 0.85);
+
+    this.ctx.restore();
+  }
+
+  private renderSocialServicesGameOver() {
+    this.ctx.save();
+
+    // Renderizar main room de fondo (sin pet)
+    this.renderRoom();
+
+    // Servicios Sociales en el centro (tamaño normal)
+    const ssSprite = this.illnessCache.get('Servicios_Sociales');
+    let ssY = this.canvas.height * 0.4;
+    let targetHeight = 150;
+
+    if (ssSprite && ssSprite.complete) {
+      const targetWidth = 150;
+      targetHeight = (ssSprite.height / ssSprite.width) * targetWidth;
+      const ssX = (this.canvas.width - targetWidth) / 2;
+      ssY = this.canvas.height * 0.4;
+
+      this.ctx.save();
+
+      // Flipear horizontalmente (mirar a la izquierda)
+      this.ctx.translate(ssX + targetWidth / 2, ssY + targetHeight / 2);
+      this.ctx.scale(-1, 1);
+      this.ctx.translate(-(ssX + targetWidth / 2), -(ssY + targetHeight / 2));
+
+      this.ctx.drawImage(ssSprite, ssX, ssY, targetWidth, targetHeight);
+      this.ctx.restore();
+    }
+
+    // Bocadillo con mensaje (posición fija en Y)
+    const bubble = this.illnessCache.get('bubble_comic');
+    if (bubble && bubble.complete) {
+      const bubbleWidth = 250;
+      const bubbleHeight = (bubble.height / bubble.width) * bubbleWidth;
+      // Centrado en la mitad izquierda: área de 0 a canvas.width/2
+      const bubbleX = (this.canvas.width / 2 - bubbleWidth) / 2;
+      // Posición Y fija
+      const bubbleY = 140;
+
+      this.ctx.drawImage(bubble, bubbleX, bubbleY, bubbleWidth, bubbleHeight);
+
+      // Texto según el motivo
+      this.ctx.font = 'bold 14px Arial';
+      this.ctx.fillStyle = '#000';
+      this.ctx.textAlign = 'center';
+      this.ctx.textBaseline = 'middle'; // Centrar verticalmente
+
+      if (this.ssGameOverReason === 'second_illness') {
+        this.ctx.fillText('Nos hemos llevado', bubbleX + bubbleWidth / 2, bubbleY + bubbleHeight / 2 - 35);
+        this.ctx.fillText('a tu criatura para', bubbleX + bubbleWidth / 2, bubbleY + bubbleHeight / 2 - 20);
+        this.ctx.fillText('que esté en un hogar', bubbleX + bubbleWidth / 2, bubbleY + bubbleHeight / 2 -5);
+        this.ctx.fillText('MEJOR QUE ESTE', bubbleX + bubbleWidth / 2, bubbleY + bubbleHeight / 2 + 10);
+      } else {
+        this.ctx.fillText('Nos hemos llevado', bubbleX + bubbleWidth / 2, bubbleY + bubbleHeight / 2 - 35);
+        this.ctx.fillText('a tu criatura para', bubbleX + bubbleWidth / 2, bubbleY + bubbleHeight / 2 - 20);
+        this.ctx.fillText('que esté en un hogar', bubbleX + bubbleWidth / 2, bubbleY + bubbleHeight / 2 - 5);
+        this.ctx.fillText('MEJOR QUE ESTE', bubbleX + bubbleWidth / 2, bubbleY + bubbleHeight / 2 + 10);
+      }
+    }
+
+    // Botón "Revivir" (provisional, el usuario verá esto como Game Over)
+    this.ctx.font = 'bold 16px Arial';
+    this.ctx.fillStyle = '#ff0000';
+    this.ctx.textAlign = 'center';
+    this.ctx.fillText('(tap para revivir)', this.canvas.width / 2, this.canvas.height * 0.85);
+
+    this.ctx.restore();
+  }
+
+  private renderSocialServicesWatching() {
+    // Servicios Sociales observando (más grande que en first warning)
+    const ssSprite = this.illnessCache.get('Servicios_Sociales');
+    if (ssSprite && ssSprite.complete) {
+      const targetWidth = 120; // Más grande que first warning (100)
+      const targetHeight = (ssSprite.height / ssSprite.width) * targetWidth;
+      const ssX = this.canvas.width * 0.65; // MISMA posición que first warning
+      const ssY = this.canvas.height * 0.25; // MISMA posición que first warning
+
+      this.ctx.save();
+      // NO semi-transparente, completamente visible
+
+      // Flipear horizontalmente (mirar a la izquierda)
+      this.ctx.translate(ssX + targetWidth / 2, ssY + targetHeight / 2); // Mover al centro del sprite
+      this.ctx.scale(-1, 1); // Flipear horizontalmente
+      this.ctx.translate(-(ssX + targetWidth / 2), -(ssY + targetHeight / 2)); // Volver a posición original
+
+      this.ctx.drawImage(ssSprite, ssX, ssY, targetWidth, targetHeight);
+      this.ctx.restore();
+    }
+  }
+
+  startAmbulanceAnimation() {
+    console.log('[GameUI] Starting ambulance animation...');
+    this.ambulanceAnimationActive = true;
+    this.ambulanceAnimationTimer = 0;
+    this.ambulanceShakeOffset = 0;
+  }
+
+  showFirstWarning() {
+    console.log('[GameUI] Showing first warning...');
+    this.showingFirstWarning = true;
+    this.firstWarningStep = 1; // Empezar en mensaje 1
+    // NO activar SS aquí, se activa después del segundo tap
+  }
+
+  showSocialServicesGameOver(reason: 'second_illness' | 'hunger_death') {
+    console.log('[GameUI] Social Services Game Over:', reason);
+    this.showingSocialServicesGameOver = true;
+    this.ssGameOverReason = reason;
+  }
 }

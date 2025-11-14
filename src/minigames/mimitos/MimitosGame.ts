@@ -14,6 +14,8 @@ export class MimitosGame {
   private timeLeft: number = 5; // 5 segundos
   private readonly maxTime: number = 5;
   private tapsCount: number = 0;
+  private finishedScreenDelay: number = 0; // Delay antes de permitir cerrar
+  private readonly FINISHED_DELAY: number = 0.5; // 0.5 segundos de delay
 
   constructor() {
     // Empieza directamente en 'playing'
@@ -35,8 +37,12 @@ export class MimitosGame {
       if (this.timeLeft <= 0) {
         this.timeLeft = 0;
         this.phase = 'finished';
+        this.finishedScreenDelay = this.FINISHED_DELAY; // Iniciar delay
         console.log(`[MimitosGame] Finished! Total taps: ${this.tapsCount}`);
       }
+    } else if (this.phase === 'finished' && this.finishedScreenDelay > 0) {
+      // Contar delay antes de permitir cerrar
+      this.finishedScreenDelay -= deltaTime;
     }
   }
 
@@ -62,9 +68,15 @@ export class MimitosGame {
     return this.timeLeft / this.maxTime;
   }
 
+  canClose(): boolean {
+    // Solo se puede cerrar si está en finished Y el delay ha terminado
+    return this.phase === 'finished' && this.finishedScreenDelay <= 0;
+  }
+
   reset() {
     this.phase = 'playing';
     this.timeLeft = this.maxTime;
     this.tapsCount = 0;
+    this.finishedScreenDelay = 0;
   }
 }

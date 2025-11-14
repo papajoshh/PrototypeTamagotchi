@@ -49,6 +49,7 @@
   - **EdgyBunBun** (Edgy): Plataformer vertical con plataformas procedurales
   - **SimonDice** (Intelectual): Memoria - Repite secuencias de 3 botones únicos que se barajan
   - **Parachute** (Sassy): Recolección - Mueve canasta para recoger objetos buenos y evitar malos
+  - **Cooking** (Todas personalidades): Cocina horizontal con 3 pantallas, drag & drop ingredientes
 - **UI Main Room**: Interfaz completa con menús desplegables para comida, juego y decoración
 - **Sistema de Settings**: Panel completo con configuración de audio, sueño, notificaciones
   - **Sleep System**: Modo automático/manual, horario configurable, pantalla de sueño, despertar temporal
@@ -533,6 +534,78 @@ successChance = 100 - (score * 0.4);
 - `/assets/minigames/Parachute/savings.png` (diamond - +5 puntos)
 - `/assets/minigames/Parachute/Caca.png` (poop - stun 2s)
 - `/assets/minigames/Parachute/NUKE.png` (bomb - stun 3s + -5 puntos + flash)
+
+### Cooking (Implementado)
+
+**Personalidad**: Todas (universal)
+**Mecánica**: Cocina horizontal de 3 pantallas - Drag & Drop ingredientes desde armarios a cesta, entrega a mascota
+
+**Fases**:
+1. **Waiting**: Pantalla con instrucciones + botón "¡Empezar!"
+2. **Playing**: Navega por la cocina, arrastra ingredientes a la cesta, entrega a la mascota
+3. **Finished**: Pantalla de victoria/derrota + score + botón "Ver Recompensas"
+
+**Mecánica de Juego**:
+- **Mundo**: 3 pantallas horizontales (1440px total, 480px cada pantalla)
+  - **Pantalla Izquierda**: 3 armarios verticales con ingredientes
+  - **Pantalla Central**: Mascota + armario superior con 3 ingredientes + cesta abajo
+  - **Pantalla Derecha**: 3 armarios verticales con ingredientes
+- **Navegación**: Swipe horizontal para moverse entre pantallas (3 estados fijos: left, center, right)
+- **Cesta**: Viaja contigo, siempre visible abajo (posición fija en pantalla)
+- **Drag & Drop**:
+  - Click en ingrediente de armario → Aparece en cursor (fuente infinita, no desaparece)
+  - Drag a cesta → Almacena ingrediente
+  - Drag desde cesta → Puedes remover ingredientes
+  - Drag a mascota (pantalla central) → Entrega ingrediente
+  - Soltar fuera de áreas válidas → Ingrediente desaparece
+
+**Peticiones de la Mascota**:
+- **Tier 1**: Pide 1 ingrediente
+- **Tier 2**: Pide 2 ingredientes
+- **Tier 3**: Pide 3 ingredientes
+- **Orden NO importa**: Solo importa que entregues los ingredientes correctos
+- **Visual**: Speech bubble arriba de mascota muestra ingredientes pedidos
+- **Checkmarks**: Cada ingrediente correcto entregado se marca con ✓
+- **Nueva petición**: Tras completar todos los ingredientes (o fallar uno), se genera nueva petición aleatoria
+
+**Sistema de Score (Barra de Progreso)**:
+- **Inicial**: 50% (punto medio)
+- **Decaimiento**: -0.5% por segundo (constante, crea presión de tiempo)
+- **Acierto**: +15% por ingrediente correcto entregado
+- **Fallo**: -25% por ingrediente incorrecto entregado
+- **Win**: Barra llega al 100%
+- **Lose**: Barra llega al 0%
+
+**Controles**:
+- **Swipe horizontal**: Mueve cámara entre pantallas (threshold: 50px)
+- **Drag ingrediente**: Click/touch en ingrediente → Drag → Soltar en cesta/mascota
+- **Smooth camera**: Transición suave con lerp (15% por frame)
+
+**Distribución de Ingredientes**:
+- **Aleatorio al inicio**: Cada partida tiene distribución diferente de ingredientes
+- **9 ingredientes** totales distribuidos en los armarios (3 por pantalla)
+- **Selección aleatoria**: De todos los ingredientes disponibles (anxious, edgy, geek, sassy, intelectual × tiers 1-3)
+
+**Recompensa Final**:
+- El tier/personalidad/estrellas es del **ingrediente seleccionado al entrar** (como antes)
+- Los ingredientes del minijuego son solo para la mecánica del juego
+
+**Configuración**:
+- `DECAY_RATE`: -0.5% por segundo
+- `CORRECT_REWARD`: +15% por ingrediente correcto
+- `INCORRECT_PENALTY`: -25% por ingrediente incorrecto
+- `SWIPE_THRESHOLD`: 50px (detección de swipe)
+- `CAMERA_LERP`: 0.15 (velocidad de transición de cámara)
+- Sin tiempo límite: El juego dura lo que tarde en llegar la barra a 0 o 100 (~30s aprox)
+
+**Assets**:
+- `/assets/minigames/Cooking/Cocina.png` (fondo 3 pantallas, 1440px width)
+- `/assets/minigames/Cooking/cart.png` (cesta)
+- Ingredientes: Emojis placeholder (🍎🍇🍊🍓🍋🍴) hasta que haya sprites
+
+**Archivos**:
+- `src/minigames/cooking/CookingGame.ts` - Lógica del juego
+- `src/minigames/cooking/CookingUI.ts` - Renderizado y controles
 
 ## 🍱 Sistema de Comida
 

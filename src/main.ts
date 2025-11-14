@@ -70,8 +70,13 @@ ui.onCleanPoop = () => {
 };
 
 ui.onCure = () => {
-  pet.cure();
-  console.log('[Game] Cured illness');
+  // Intentar curar con ambulancia (dispara animación)
+  const started = pet.attemptCureWithAmbulance();
+  if (started) {
+    console.log('[Game] Starting ambulance animation to cure illness...');
+  } else {
+    console.log('[Game] Pet is not ill');
+  }
   // Renovar despertar temporal si está activo
   settings.sleep.refreshTemporaryWakeUp();
 };
@@ -122,6 +127,17 @@ pet.onDeath = () => {
   alert('Tu mascota ha muerto! 😢');
 };
 
+// Eventos de Servicios Sociales
+pet.onAmbulance = () => {
+  console.log('[Game] Ambulance triggered!');
+  ui.startAmbulanceAnimation();
+};
+
+pet.onSocialServicesGameOver = (reason) => {
+  console.log(`[Game] Social Services Game Over: ${reason}`);
+  ui.showSocialServicesGameOver(reason);
+};
+
 // Iniciar game loop
 gameLoop.start((pet) => {
   ui.render();
@@ -143,7 +159,7 @@ console.log('');
 console.log('🛠️  DEV TOOLS:');
 console.log('  resetPet()         - Clear save and restart');
 console.log('  killPet()          - Kill pet instantly');
-console.log('  makeIll()          - Make pet ill');
+console.log('  makeIll()          - Trigger illness (ambulance + SS flow)');
 console.log('  makePoop()         - Make pet poop instantly');
 console.log('  forceNeglect()     - Mark as neglected (evolves to Descuidado)');
 console.log('  addIngredient(personality, tier) - Add 5 ingredients');
@@ -225,8 +241,24 @@ console.log('  - pet.memorySystem - Check memories');
 };
 
 (window as any).makeIll = () => {
-  pet.illness.getIll(pet.stage);
-  console.log('Pet is now ill!');
+  // Simular el flujo COMPLETO de enfermedad (con ambulancia y SS)
+  console.log('[Debug] Triggering illness with full flow (ambulance + first warning)...');
+
+  // Forzar caca si no existe
+  if (!pet.poop.hasPoopedNow()) {
+    pet.poop.forcePoop();
+    console.log('[Debug] Forced poop to appear');
+  }
+
+  // Forzar que la caca ya esté hace suficiente tiempo para causar enfermedad
+  // Acceder al timer interno (hack, pero es debug)
+  (pet.poop as any).timeSincePoop = 10000; // Suficiente para cualquier stage
+
+  // Ahora llamar a checkDeath que triggereará todo el flujo
+  pet.checkDeath();
+
+  console.log('[Debug] Illness triggered! Watch for ambulance animation (3s) → First Warning');
+  console.log(`[Debug] Illness count: ${pet.illnessCount}`);
 };
 
 (window as any).makePoop = () => {

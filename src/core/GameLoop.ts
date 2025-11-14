@@ -102,7 +102,6 @@ export class GameLoop {
     if (!this.settings.sleep.isSleeping) {
       const deltaTime = backgroundTime * this.timeMultiplier;
       this.pet.update(deltaTime);
-      console.log(`[GameLoop] Pet updated with ${deltaTime.toFixed(1)}s (multiplier: ${this.timeMultiplier}x)`);
 
       // Guardar cambios
       this.save();
@@ -134,17 +133,12 @@ export class GameLoop {
       const deltaTime = ((now - this.lastBackgroundUpdate) / 1000) * this.timeMultiplier;
       this.lastBackgroundUpdate = now;
 
-      console.log('[GameLoop] 🔄 Background update - deltaTime:', deltaTime.toFixed(1), 's');
-
       // Update sleep system
       this.settings.sleep.timePass(new Date());
 
       // Actualizar pet si NO está durmiendo
       if (!this.settings.sleep.isSleeping) {
         this.pet.update(deltaTime);
-        console.log('[GameLoop] Pet updated - growth:', this.pet.growthPoints.toFixed(1), 'hunger:', this.pet.hunger.getStars(), '⭐');
-      } else {
-        console.log('[GameLoop] ⏸️ Pet sleeping, no update');
       }
 
       // Guardar progreso
@@ -231,21 +225,24 @@ export class GameLoop {
     }
 
     // Notificación: Cerca de morir (le quedan 10 minutos o menos)
-    const TEN_MINUTES = 600; // 10 minutos en segundos
+    // SOLO si NO está muerto ya
+    if (currentStage !== 6) { // 6 = LifeStage.Dead
+      const TEN_MINUTES = 600; // 10 minutos en segundos
 
-    // Verificar tiempo hasta muerte por hambre
-    const timeUntilHungerDeath = this.pet.hunger.getTimeUntilDeath();
+      // Verificar tiempo hasta muerte por hambre
+      const timeUntilHungerDeath = this.pet.hunger.getTimeUntilDeath();
 
-    // Verificar tiempo hasta muerte por enfermedad
-    const timeUntilIllnessDeath = this.pet.illness.getTimeUntilDeath();
+      // Verificar tiempo hasta muerte por enfermedad
+      const timeUntilIllnessDeath = this.pet.illness.getTimeUntilDeath();
 
-    // Si cualquiera de los dos está en peligro crítico (<=10 min)
-    const isNearDeath =
-      (timeUntilHungerDeath !== null && timeUntilHungerDeath <= TEN_MINUTES) ||
-      (timeUntilIllnessDeath !== null && timeUntilIllnessDeath <= TEN_MINUTES);
+      // Si cualquiera de los dos está en peligro crítico (<=10 min)
+      const isNearDeath =
+        (timeUntilHungerDeath !== null && timeUntilHungerDeath <= TEN_MINUTES) ||
+        (timeUntilIllnessDeath !== null && timeUntilIllnessDeath <= TEN_MINUTES);
 
-    if (isNearDeath) {
-      this.notifications.notify('near_death');
+      if (isNearDeath) {
+        this.notifications.notify('near_death');
+      }
     }
 
     // Notificación: Va a evolucionar (progreso >= 100% y no está en stage final)

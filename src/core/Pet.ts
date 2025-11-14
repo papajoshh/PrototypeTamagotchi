@@ -31,6 +31,8 @@ export class Pet {
   mimitosTimer: number = 120; // 2 minutos hasta pedir mimitos
   readonly MIMITOS_INTERVAL: number = 120; // Cada 2 minutos
   isDemandingMimitos: boolean = false;
+  mimitosOpportunityTimer: number = 10; // 10 segundos de ventana para activar mimitos
+  readonly MIMITOS_OPPORTUNITY_WINDOW: number = 10; // Ventana de 10 segundos
 
   // Decoración actual
   currentRoom: string = 'style1'; // Por defecto style1
@@ -40,10 +42,24 @@ export class Pet {
   readonly EGG_TAPS_REQUIRED: number = 20;
   eggRotation: number = 0; // Ángulo de rotación del huevo (metrónomo: -30° a +30°)
 
+  // Sistema de Servicios Sociales
+  socialServicesActivated: boolean = false; // Si ya se dio el primer aviso
+  illnessCount: number = 0; // Contador de enfermedades (2da = Game Over)
+  socialServicesWatching: boolean = false; // Si están observando actualmente
+  socialServicesWatchingReason: string | null = null; // 'hunger' | 'fun' | 'poop'
+
+  // Valores previos para detectar transiciones (SS watching triggers)
+  private previousHungerStars: number = 3;
+  private previousFunStars: number = 3;
+  private previousHasPoop: boolean = false;
+
   // Eventos
   onEvolve?: (newStage: LifeStage) => void;
   onDeath?: () => void;
   onGrow?: (progress: number) => void;
+  onSocialServicesGameOver?: (reason: 'second_illness' | 'hunger_death') => void; // Game Over por SS
+  onAmbulance?: () => void; // Trigger animación de ambulancia
+  onFirstWarning?: () => void; // Trigger "PRIMER AVISO"
 
   constructor() {
     this.hunger = new Hunger(this.stage);
@@ -96,13 +112,90 @@ export class Pet {
     // Verificar muerte
     this.checkDeath();
 
+    // Sistema de Servicios Sociales "watching" (solo si ya fue activado)
+    if (this.socialServicesActivated && !this.socialServicesWatching) {
+      // Detectar transición hambre: 2→1 o 1→0 estrellas
+      const currentHungerStars = this.hunger.getStars();
+      if ((this.previousHungerStars === 2 && currentHungerStars === 1) ||
+          (this.previousHungerStars === 1 && currentHungerStars === 0)) {
+        // Roll de 50% para activar SS watching
+        if (Math.random() < 0.5) {
+          this.socialServicesWatching = true;
+          this.socialServicesWatchingReason = 'hunger';
+          console.log('[Pet] 🚨 Social Services are now WATCHING (hunger critical!)');
+        }
+      }
+      this.previousHungerStars = currentHungerStars;
+
+      // Detectar transición diversión: 2→1 o 1→0 estrellas
+      const currentFunStars = this.boring.getStars();
+      if ((this.previousFunStars === 2 && currentFunStars === 1) ||
+          (this.previousFunStars === 1 && currentFunStars === 0)) {
+        // Roll de 50% para activar SS watching
+        if (Math.random() < 0.5) {
+          this.socialServicesWatching = true;
+          this.socialServicesWatchingReason = 'fun';
+          console.log('[Pet] 🚨 Social Services are now WATCHING (fun critical!)');
+        }
+      }
+      this.previousFunStars = currentFunStars;
+
+      // Detectar aparición de caca
+      const currentHasPoop = this.poop.hasPoopedNow();
+      if (!this.previousHasPoop && currentHasPoop) {
+        // Roll de 50% para activar SS watching
+        if (Math.random() < 0.5) {
+          this.socialServicesWatching = true;
+          this.socialServicesWatchingReason = 'poop';
+          console.log('[Pet] 🚨 Social Services are now WATCHING (poop appeared!)');
+        }
+      }
+      this.previousHasPoop = currentHasPoop;
+    }
+
+    // Desactivar SS watching si las condiciones mejoran
+    if (this.socialServicesWatching) {
+      const hungerOK = this.hunger.getStars() >= 2;
+      const funOK = this.boring.getStars() >= 2;
+      const poopOK = !this.poop.hasPoopedNow();
+
+      if (hungerOK && funOK && poopOK) {
+        this.socialServicesWatching = false;
+        this.socialServicesWatchingReason = null;
+        console.log('[Pet] ✅ Social Services stopped watching (conditions improved)');
+      }
+    }
+
     // Sistema de mimitos (solo cuando está completamente satisfecho)
     const isFullySatisfied = this.hunger.isFullySatiated() && this.boring.isFullyEntertained();
-    if (isFullySatisfied && !this.isDemandingMimitos) {
-      this.mimitosTimer -= deltaTime;
-      if (this.mimitosTimer <= 0) {
-        this.isDemandingMimitos = true;
-        console.log('[Pet] 💕 Demanding mimitos!');
+
+    if (isFullySatisfied) {
+      if (!this.isDemandingMimitos) {
+        // Esperando a que se active la demanda
+        this.mimitosTimer -= deltaTime;
+        if (this.mimitosTimer <= 0) {
+          this.isDemandingMimitos = true;
+          this.mimitosOpportunityTimer = this.MIMITOS_OPPORTUNITY_WINDOW; // Resetear ventana de oportunidad
+          console.log('[Pet] 💕 Demanding mimitos! You have 10 seconds to respond.');
+        }
+      } else {
+        // Ya está demandando mimitos, contar ventana de oportunidad
+        this.mimitosOpportunityTimer -= deltaTime;
+        if (this.mimitosOpportunityTimer <= 0) {
+          // Se acabó la ventana de oportunidad, resetear todo
+          this.isDemandingMimitos = false;
+          this.mimitosTimer = this.MIMITOS_INTERVAL; // Volver a esperar 2 minutos
+          this.mimitosOpportunityTimer = this.MIMITOS_OPPORTUNITY_WINDOW;
+          console.log('[Pet] 💔 Mimitos opportunity missed! Waiting another 2 minutes...');
+        }
+      }
+    } else {
+      // Si deja de estar satisfecho mientras está demandando, cancelar
+      if (this.isDemandingMimitos) {
+        this.isDemandingMimitos = false;
+        this.mimitosTimer = this.MIMITOS_INTERVAL;
+        this.mimitosOpportunityTimer = this.MIMITOS_OPPORTUNITY_WINDOW;
+        console.log('[Pet] Mimitos demand cancelled (no longer fully satisfied)');
       }
     }
   }
@@ -325,9 +418,23 @@ export class Pet {
     this.illness.cancelIllness(); // Cancela enfermedad si estaba en timer
   }
 
-  // Curar enfermedad
+  // Curar enfermedad (llamado directamente, sin ambulancia - solo para debug/legacy)
   cure() {
     this.illness.cure();
+  }
+
+  // Intentar curar con ambulancia (llamado cuando usuario tapa pet enfermo)
+  attemptCureWithAmbulance(): boolean {
+    if (!this.illness.isCurrentlyIll()) {
+      return false; // No está enfermo, no hacer nada
+    }
+
+    // Disparar animación de ambulancia
+    if (this.onAmbulance) {
+      this.onAmbulance();
+    }
+
+    return true;
   }
 
   // Sistema de mimitos
@@ -344,29 +451,63 @@ export class Pet {
     // Resetear estado de mimitos
     this.isDemandingMimitos = false;
     this.mimitosTimer = this.MIMITOS_INTERVAL; // Resetear a 2 minutos
+    this.mimitosOpportunityTimer = this.MIMITOS_OPPORTUNITY_WINDOW; // Resetear ventana
     console.log('[Pet] 💕 Mimitos session ended. Next demand in 2 minutes.');
   }
 
-  // Verificar condiciones de muerte y enfermedad
-  checkDeath() {
+  // Verificar condiciones de muerte y enfermedad (público para testing)
+  public checkDeath() {
     // Verificar si debe enfermarse
     if (this.poop.shouldTriggerIllness() && !this.illness.isCurrentlyIll()) {
+      this.illnessCount++; // Incrementar contador de enfermedades
+
+      // 2da enfermedad = Game Over por Servicios Sociales (ANTES de poder curar)
+      if (this.illnessCount >= 2) {
+        console.log('[Pet] 🚨 Second illness! Social Services GAME OVER!');
+        // NO poner en Dead para que se muestre la pantalla de SS, no la de muerte
+        if (this.onSocialServicesGameOver) {
+          this.onSocialServicesGameOver('second_illness');
+        }
+        return;
+      }
+
+      // 1ra enfermedad: Poner enfermo (espera tap del usuario para curar)
       this.illness.getIll(this.stage);
-      console.log('[Pet] Got ill from poop!');
+      this.wasNeglected = true; // Marcar como neglected automáticamente
+      console.log('[Pet] 🚨 Got ill from poop! Tap the pet to cure with ambulance.');
+      // NO disparar ambulancia aquí, esperar a que el usuario tape el pet
     }
 
-    // Muerte por hambre (20-25 horas)
+    // Muerte por hambre: Si SS ya fue activado, interceptar con Game Over
     if (this.hunger.isDying()) {
-      console.log('[Pet] Died from hunger!');
-      this.die();
-      return;
+      if (this.socialServicesActivated) {
+        console.log('[Pet] 🚨 Death by hunger intercepted by Social Services!');
+        // NO poner en Dead para que se muestre la pantalla de SS, no la de muerte
+        if (this.onSocialServicesGameOver) {
+          this.onSocialServicesGameOver('hunger_death');
+        }
+        return;
+      } else {
+        console.log('[Pet] Died from hunger!');
+        this.die();
+        return;
+      }
     }
 
-    // Muerte por enfermedad (8 horas enferma)
+    // Muerte por enfermedad: Si SS está activado, nunca puede morir así (solo Game Over por SS)
     if (this.illness.isDying()) {
-      console.log('[Pet] Died from illness!');
-      this.die();
-      return;
+      if (this.socialServicesActivated) {
+        // SS activado = No puede morir por enfermedad, solo Game Over por SS
+        console.log('[Pet] ⚠️ Illness death blocked by Social Services (already activated)');
+        // Auto-curar para evitar bucle
+        this.illness.cure();
+        return;
+      } else {
+        // SS no activado = Muerte normal
+        console.log('[Pet] Died from illness!');
+        this.die();
+        return;
+      }
     }
   }
 
@@ -380,27 +521,47 @@ export class Pet {
   // Resucitar (vuelve a Egg, no directamente a Baby)
   revive() {
     if (this.stage === LifeStage.Dead) {
-      this.stage = LifeStage.Egg; // Vuelve a huevo
-      this.eggTaps = 0; // Resetear progreso de taps
-      this.eggRotation = 0; // Resetear rotación del huevo
-      this.personality = null; // Limpiar personalidad
-      this.memorySystem = new MemorySystem(); // Resetear memorias
-      this.illness.cure();
-      this.hunger.reset();
-      this.boring.reset();
-      this.poop.reset();
-      this.growthPoints = 0; // Resetear crecimiento
-      this.wasNeglected = false; // Resetear flag de descuidado
-      this.neglectedTime = 0; // Resetear tiempo acumulado de descuido
-      this.mimitosTimer = this.MIMITOS_INTERVAL; // Resetear timer de mimitos
-      this.isDemandingMimitos = false; // Resetear demanda de mimitos
-      // Actualizar timers al stage Egg (no se actualizan en update porque Egg está excluido)
-      this.hunger.onStageChange(this.stage);
-      this.boring.onStageChange(this.stage);
+      this.resetToEgg();
+    }
+  }
 
-      if (this.onEvolve) {
-        this.onEvolve(this.stage);
-      }
+  // Reset completo después de SS Game Over (no requiere estar en Dead)
+  resetAfterSocialServices() {
+    this.resetToEgg();
+  }
+
+  // Método común de reset a Egg (usado por revive y SS Game Over)
+  private resetToEgg() {
+    this.stage = LifeStage.Egg; // Vuelve a huevo
+    this.eggTaps = 0; // Resetear progreso de taps
+    this.eggRotation = 0; // Resetear rotación del huevo
+    this.personality = null; // Limpiar personalidad
+    this.memorySystem = new MemorySystem(); // Resetear memorias
+    this.illness.cure();
+    this.hunger.reset();
+    this.boring.reset();
+    this.poop.reset();
+    this.growthPoints = 0; // Resetear crecimiento
+    this.wasNeglected = false; // Resetear flag de descuidado
+    this.neglectedTime = 0; // Resetear tiempo acumulado de descuido
+    this.mimitosTimer = this.MIMITOS_INTERVAL; // Resetear timer de mimitos
+    this.isDemandingMimitos = false; // Resetear demanda de mimitos
+
+    // Resetear sistema de Servicios Sociales
+    this.socialServicesActivated = false;
+    this.illnessCount = 0;
+    this.socialServicesWatching = false;
+    this.socialServicesWatchingReason = null;
+    this.previousHungerStars = 3;
+    this.previousFunStars = 3;
+    this.previousHasPoop = false;
+
+    // Actualizar timers al stage Egg (no se actualizan en update porque Egg está excluido)
+    this.hunger.onStageChange(this.stage);
+    this.boring.onStageChange(this.stage);
+
+    if (this.onEvolve) {
+      this.onEvolve(this.stage);
     }
   }
 
@@ -422,6 +583,16 @@ export class Pet {
       this.neglectedTime = 0; // Resetear tiempo acumulado de descuido
       this.mimitosTimer = this.MIMITOS_INTERVAL; // Resetear timer de mimitos
       this.isDemandingMimitos = false; // Resetear demanda de mimitos
+
+      // Resetear sistema de Servicios Sociales
+      this.socialServicesActivated = false;
+      this.illnessCount = 0;
+      this.socialServicesWatching = false;
+      this.socialServicesWatchingReason = null;
+      this.previousHungerStars = 3;
+      this.previousFunStars = 3;
+      this.previousHasPoop = false;
+
       // Actualizar timers al stage Egg
       this.hunger.onStageChange(this.stage);
       this.boring.onStageChange(this.stage);
@@ -488,7 +659,16 @@ export class Pet {
       neglectedTime: this.neglectedTime,
       mimitosTimer: this.mimitosTimer,
       isDemandingMimitos: this.isDemandingMimitos,
+      mimitosOpportunityTimer: this.mimitosOpportunityTimer,
       currentRoom: this.currentRoom,
+      // Servicios Sociales
+      socialServicesActivated: this.socialServicesActivated,
+      illnessCount: this.illnessCount,
+      socialServicesWatching: this.socialServicesWatching,
+      socialServicesWatchingReason: this.socialServicesWatchingReason,
+      previousHungerStars: this.previousHungerStars,
+      previousFunStars: this.previousFunStars,
+      previousHasPoop: this.previousHasPoop,
     });
   }
 
@@ -523,8 +703,33 @@ export class Pet {
     if (parsed.isDemandingMimitos !== undefined) {
       this.isDemandingMimitos = parsed.isDemandingMimitos;
     }
+    if (parsed.mimitosOpportunityTimer !== undefined) {
+      this.mimitosOpportunityTimer = parsed.mimitosOpportunityTimer;
+    }
     if (parsed.currentRoom) {
       this.currentRoom = parsed.currentRoom;
+    }
+    // Servicios Sociales
+    if (parsed.socialServicesActivated !== undefined) {
+      this.socialServicesActivated = parsed.socialServicesActivated;
+    }
+    if (parsed.illnessCount !== undefined) {
+      this.illnessCount = parsed.illnessCount;
+    }
+    if (parsed.socialServicesWatching !== undefined) {
+      this.socialServicesWatching = parsed.socialServicesWatching;
+    }
+    if (parsed.socialServicesWatchingReason !== undefined) {
+      this.socialServicesWatchingReason = parsed.socialServicesWatchingReason;
+    }
+    if (parsed.previousHungerStars !== undefined) {
+      this.previousHungerStars = parsed.previousHungerStars;
+    }
+    if (parsed.previousFunStars !== undefined) {
+      this.previousFunStars = parsed.previousFunStars;
+    }
+    if (parsed.previousHasPoop !== undefined) {
+      this.previousHasPoop = parsed.previousHasPoop;
     }
   }
 }
