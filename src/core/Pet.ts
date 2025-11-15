@@ -33,6 +33,7 @@ export class Pet {
   isDemandingMimitos: boolean = false;
   mimitosOpportunityTimer: number = 10; // 10 segundos de ventana para activar mimitos
   readonly MIMITOS_OPPORTUNITY_WINDOW: number = 10; // Ventana de 10 segundos
+  mimitosCount: number = 0; // Contador de mimitos en esta racha (reset cuando sale de 5/5)
 
   // Decoración actual
   currentRoom: string = 'style1'; // Por defecto style1
@@ -182,20 +183,23 @@ export class Pet {
         // Ya está demandando mimitos, contar ventana de oportunidad
         this.mimitosOpportunityTimer -= deltaTime;
         if (this.mimitosOpportunityTimer <= 0) {
-          // Se acabó la ventana de oportunidad, resetear todo
+          // Se acabó la ventana de oportunidad, incrementar contador y calcular siguiente intervalo
+          this.mimitosCount++;
+          const nextInterval = this.getNextMimitosInterval();
           this.isDemandingMimitos = false;
-          this.mimitosTimer = this.MIMITOS_INTERVAL; // Volver a esperar 2 minutos
+          this.mimitosTimer = nextInterval;
           this.mimitosOpportunityTimer = this.MIMITOS_OPPORTUNITY_WINDOW;
-          console.log('[Pet] 💔 Mimitos opportunity missed! Waiting another 2 minutes...');
+          console.log(`[Pet] 💔 Mimitos opportunity missed! Waiting ${(nextInterval/60).toFixed(1)} minutes...`);
         }
       }
     } else {
-      // Si deja de estar satisfecho mientras está demandando, cancelar
+      // Si deja de estar satisfecho mientras está demandando, cancelar Y RESETEAR CONTADOR
       if (this.isDemandingMimitos) {
         this.isDemandingMimitos = false;
         this.mimitosTimer = this.MIMITOS_INTERVAL;
         this.mimitosOpportunityTimer = this.MIMITOS_OPPORTUNITY_WINDOW;
-        console.log('[Pet] Mimitos demand cancelled (no longer fully satisfied)');
+        this.mimitosCount = 0; // Reset progresión cuando sale de 5/5
+        console.log('[Pet] Mimitos demand cancelled (no longer fully satisfied) - progression reset');
       }
     }
   }
@@ -346,17 +350,26 @@ export class Pet {
   }
 
   // Jugar minijuego (reduce aburrimiento y da ingrediente como recompensa)
-  play(personalityType: string, scorePercentage: number = 0): Ingredient[] {
+  play(personalityType: string, scorePercentage: number = 0): { ingredients: Ingredient[], funStars: number } {
     // No se puede jugar con un huevo
     if (this.stage === LifeStage.Egg) {
       console.log('[Pet] Cannot play with an egg!');
-      return [];
+      return { ingredients: [], funStars: 0 };
     }
 
     // Verificar si necesita generar recuerdo ANTES de entretener
     const wasNotFullyEntertained = !this.boring.isFullyEntertained();
 
-    this.boring.entertain();
+    // Calcular estrellas de diversión según rendimiento (mismo criterio que ingredientes)
+    let entertainmentStars = 1; // Por defecto: 1 estrella (<30%)
+    if (scorePercentage >= 0.7) {
+      entertainmentStars = 3; // ≥70%: 3 estrellas (tier 3)
+    } else if (scorePercentage >= 0.3) {
+      entertainmentStars = 2; // 30-70%: 2 estrellas (tier 2)
+    }
+
+    this.boring.entertain(entertainmentStars);
+    console.log(`[Pet] Minigame entertainment: +${entertainmentStars} stars (${(scorePercentage * 100).toFixed(1)}% performance)`);
 
     // Generar recuerdo si NO estaba completamente entretenido antes Y no es neutral
     if (wasNotFullyEntertained && personalityType !== 'neutral') {
@@ -370,7 +383,7 @@ export class Pet {
       console.log(`[Pet] Minigame reward: ${reward.name}`);
     });
 
-    return rewards;
+    return { ingredients: rewards, funStars: entertainmentStars };
   }
 
   private generateIngredientRewards(personalityType: string, scorePercentage: number): Ingredient[] {
@@ -447,12 +460,31 @@ export class Pet {
     console.log(`[Pet] 💕 Mimito given! +${growthIncrease.toFixed(1)} growth (${(growthIncrease / threshold * 100).toFixed(1)}%)`);
   }
 
+  // Calcula el próximo intervalo de mimitos basado en el contador
+  private getNextMimitosInterval(): number {
+    if (this.mimitosCount === 0) {
+      // Primera vez: 2 minutos fijos
+      return 120;
+    } else {
+      // Progresión x2: count 1 = [2-4], count 2 = [4-8], count 3 = [8-16], etc.
+      const minInterval = 120 * Math.pow(2, this.mimitosCount - 1); // 2min * 2^(count-1)
+      const maxInterval = minInterval * 2;
+      const randomInterval = minInterval + Math.random() * (maxInterval - minInterval);
+      console.log(`[Pet] 💕 Mimitos count: ${this.mimitosCount}, next interval: ${(randomInterval/60).toFixed(1)} min (range: ${minInterval/60}-${maxInterval/60} min)`);
+      return randomInterval;
+    }
+  }
+
   endMimitos() {
+    // Incrementar contador de mimitos
+    this.mimitosCount++;
+
     // Resetear estado de mimitos
     this.isDemandingMimitos = false;
-    this.mimitosTimer = this.MIMITOS_INTERVAL; // Resetear a 2 minutos
+    const nextInterval = this.getNextMimitosInterval();
+    this.mimitosTimer = nextInterval;
     this.mimitosOpportunityTimer = this.MIMITOS_OPPORTUNITY_WINDOW; // Resetear ventana
-    console.log('[Pet] 💕 Mimitos session ended. Next demand in 2 minutes.');
+    console.log(`[Pet] 💕 Mimitos session ended. Next demand in ${(nextInterval/60).toFixed(1)} minutes.`);
   }
 
   // Verificar condiciones de muerte y enfermedad (público para testing)
@@ -546,6 +578,7 @@ export class Pet {
     this.neglectedTime = 0; // Resetear tiempo acumulado de descuido
     this.mimitosTimer = this.MIMITOS_INTERVAL; // Resetear timer de mimitos
     this.isDemandingMimitos = false; // Resetear demanda de mimitos
+    this.mimitosCount = 0; // Resetear contador de progresión de mimitos
 
     // Resetear sistema de Servicios Sociales
     this.socialServicesActivated = false;
@@ -583,6 +616,7 @@ export class Pet {
       this.neglectedTime = 0; // Resetear tiempo acumulado de descuido
       this.mimitosTimer = this.MIMITOS_INTERVAL; // Resetear timer de mimitos
       this.isDemandingMimitos = false; // Resetear demanda de mimitos
+      this.mimitosCount = 0; // Resetear contador de progresión de mimitos
 
       // Resetear sistema de Servicios Sociales
       this.socialServicesActivated = false;
@@ -660,6 +694,7 @@ export class Pet {
       mimitosTimer: this.mimitosTimer,
       isDemandingMimitos: this.isDemandingMimitos,
       mimitosOpportunityTimer: this.mimitosOpportunityTimer,
+      mimitosCount: this.mimitosCount,
       currentRoom: this.currentRoom,
       // Servicios Sociales
       socialServicesActivated: this.socialServicesActivated,
@@ -705,6 +740,9 @@ export class Pet {
     }
     if (parsed.mimitosOpportunityTimer !== undefined) {
       this.mimitosOpportunityTimer = parsed.mimitosOpportunityTimer;
+    }
+    if (parsed.mimitosCount !== undefined) {
+      this.mimitosCount = parsed.mimitosCount;
     }
     if (parsed.currentRoom) {
       this.currentRoom = parsed.currentRoom;

@@ -2,19 +2,20 @@ import { LifeStage } from './LifeStage';
 
 // Tiempos de aburrimiento por etapa (en segundos POR ESTRELLA)
 // Según ~Docs/Diseño Notion/Diseño - Tiempos (1).csv
-// Mismo que hambre: Bebé: 15 min/⭐, Niño: 50 min/⭐, Joven: 60 min/⭐, Adulto: 60 min/⭐
+// Sistema de 5 estrellas - Tiempos totales: Baby 45min, Child 150min, Young/Adult 180min
+// Bebé: 9 min/⭐, Niño: 30 min/⭐, Joven: 36 min/⭐, Adulto: 36 min/⭐
 const BORING_TIMES = {
   [LifeStage.Egg]: 0,
-  [LifeStage.Baby]: 900,    // 15 min por estrella
-  [LifeStage.Child]: 3000,  // 50 min por estrella
-  [LifeStage.Young]: 3600,  // 60 min por estrella
-  [LifeStage.Adult]: 3600,  // 60 min por estrella
-  [LifeStage.ReadyToAscend]: 3600,
+  [LifeStage.Baby]: 540,    // 9 min por estrella (45min total / 5★)
+  [LifeStage.Child]: 1800,  // 30 min por estrella (150min total / 5★)
+  [LifeStage.Young]: 2160,  // 36 min por estrella (180min total / 5★)
+  [LifeStage.Adult]: 2160,  // 36 min por estrella (180min total / 5★)
+  [LifeStage.ReadyToAscend]: 2160,
   [LifeStage.Dead]: 0,
 };
 
 export class Boring {
-  private stars: number = 1; // 0-3 estrellas (3 = entretenido, 0 = aburrido)
+  private stars: number = 3; // 0-5 estrellas (5 = entretenido, 0 = aburrido)
   private timeToNextLevel: number = 0;
 
   constructor(stage: LifeStage) {
@@ -32,9 +33,9 @@ export class Boring {
     }
   }
 
-  // Cada minijuego aporta 1 estrella
-  entertain() {
-    this.stars = Math.min(3, this.stars + 1);
+  // Minijuegos aportan estrellas según performance (1-3 estrellas)
+  entertain(stars: number = 1) {
+    this.stars = Math.min(5, this.stars + stars);
   }
 
   // Trigger visual (muestra indicador cuando tiene 1 estrella o menos)
@@ -48,7 +49,7 @@ export class Boring {
   }
 
   isFullyEntertained(): boolean {
-    return this.stars === 3;
+    return this.stars === 5;
   }
 
   getStars(): number {
@@ -60,7 +61,7 @@ export class Boring {
   }
 
   reset() {
-    this.stars = 1;
+    this.stars = 3;
   }
 
   serialize() {

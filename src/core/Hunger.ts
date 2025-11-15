@@ -2,14 +2,15 @@ import { LifeStage } from './LifeStage';
 
 // Tiempos de hambre por etapa (en segundos POR ESTRELLA)
 // Según ~Docs/Diseño Notion/Diseño - Tiempos (1).csv
-// Bebé: 15 min/⭐, Niño: 50 min/⭐, Joven: 60 min/⭐, Adulto: 60 min/⭐
+// Sistema de 5 estrellas - Tiempos totales: Baby 45min, Child 150min, Young/Adult 180min
+// Bebé: 9 min/⭐, Niño: 30 min/⭐, Joven: 36 min/⭐, Adulto: 36 min/⭐
 const HUNGER_TIMES = {
   [LifeStage.Egg]: 0,
-  [LifeStage.Baby]: 900,    // 15 min por estrella
-  [LifeStage.Child]: 3000,  // 50 min por estrella
-  [LifeStage.Young]: 3600,  // 60 min por estrella
-  [LifeStage.Adult]: 3600,  // 60 min por estrella
-  [LifeStage.ReadyToAscend]: 3600,
+  [LifeStage.Baby]: 540,    // 9 min por estrella (45min total / 5★)
+  [LifeStage.Child]: 1800,  // 30 min por estrella (150min total / 5★)
+  [LifeStage.Young]: 2160,  // 36 min por estrella (180min total / 5★)
+  [LifeStage.Adult]: 2160,  // 36 min por estrella (180min total / 5★)
+  [LifeStage.ReadyToAscend]: 2160,
   [LifeStage.Dead]: 0,
 };
 
@@ -26,7 +27,7 @@ const DEATH_BY_HUNGER = {
 };
 
 export class Hunger {
-  private stars: number = 1; // 0-3 estrellas (3 = satisfecho, 0 = hambriento)
+  private stars: number = 3; // 0-5 estrellas (5 = satisfecho, 0 = hambriento)
   private timeToNextLevel: number = 0;
   private deathTimer: number = 0;
   private deathThreshold: number = 0;
@@ -56,7 +57,7 @@ export class Hunger {
 
   // Sistema de saciedad por tier (Tarea 4 del documento)
   satiate(satiationStars: number) {
-    this.stars = Math.min(3, this.stars + satiationStars);
+    this.stars = Math.min(5, this.stars + satiationStars);
     this.deathTimer = 0; // Reset death timer
   }
 
@@ -71,7 +72,7 @@ export class Hunger {
   }
 
   isFullySatiated(): boolean {
-    return this.stars === 3;
+    return this.stars === 5;
   }
 
   isDying(): boolean {
@@ -99,7 +100,7 @@ export class Hunger {
   }
 
   reset() {
-    this.stars = 1;
+    this.stars = 3;
     this.deathTimer = 0;
     this.deathThreshold = 0;
   }

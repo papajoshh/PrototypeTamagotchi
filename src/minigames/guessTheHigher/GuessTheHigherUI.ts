@@ -635,6 +635,17 @@ export class GuessTheHigherUI {
       const maxExpectedScore = 50;
       const scorePercentage = Math.min((state.score / maxExpectedScore) * 100, 100);
 
+      // Calcular diversión según performance
+      let funStars = 1;
+      if (scorePercentage >= 70) funStars = 3;
+      else if (scorePercentage >= 30) funStars = 2;
+
+      this.ctx.font = 'bold 20px Arial';
+      this.ctx.fillStyle = '#4CAF50';
+      this.ctx.fillText(`+${funStars} ⭐ Diversión`, centerX, centerY + 135);
+
+      this.ctx.fillStyle = '#000';
+
       // Calcular recompensas
       const rewards = {
         tier1: 0,
@@ -656,7 +667,7 @@ export class GuessTheHigherUI {
       this.ctx.font = 'bold 16px Arial';
       this.ctx.textAlign = 'center';
 
-      let rewardY = centerY + 140;
+      let rewardY = centerY + 170;
 
       if (rewards.tier1 > 0) {
         this.ctx.fillText(`⭐ Ingrediente Básico x${rewards.tier1}`, centerX, rewardY);

@@ -42,6 +42,9 @@ export class MimitosUI {
   private clickHandler: (e: MouseEvent) => void;
   private touchHandler: (e: TouchEvent) => void;
 
+  // Flag para evitar llamar handleGameEnd múltiples veces
+  private hasEnded: boolean = false;
+
   constructor(
     canvas: HTMLCanvasElement,
     ctx: CanvasRenderingContext2D,
@@ -87,10 +90,8 @@ export class MimitosUI {
       // Tap durante el juego
       this.game.tap();
       this.onTap(x, y);
-    } else if (state.phase === 'finished' && this.game.canClose()) {
-      // Click para terminar (solo si pasó el delay)
-      this.handleGameEnd();
     }
+    // No hay clicks en finished, se cierra automáticamente
   }
 
   private onTap(x: number, y: number) {
@@ -183,7 +184,13 @@ export class MimitosUI {
     if (state.phase === 'playing') {
       this.renderOverlay(state);
     } else if (state.phase === 'finished') {
-      this.renderFinishedScreen(state);
+      // Terminar directamente sin mostrar pantalla de resumen
+      if (!this.hasEnded && this.game.canClose()) {
+        this.hasEnded = true;
+        this.handleGameEnd();
+      }
+      // Mientras tanto, seguir mostrando el overlay (no la pantalla final)
+      this.renderOverlay(state);
     }
   }
 
@@ -271,51 +278,6 @@ export class MimitosUI {
     }
 
     this.ctx.globalAlpha = 1.0;
-    this.ctx.restore();
-  }
-
-  private renderFinishedScreen(state: MimitosGameState) {
-    this.ctx.save();
-
-    // Fondo semi-transparente
-    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
-    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-
-    const centerX = this.canvas.width / 2;
-    const centerY = this.canvas.height / 2;
-
-    // Mensaje de finalización
-    this.ctx.fillStyle = '#000';
-    this.ctx.font = 'bold 48px Arial';
-    this.ctx.textAlign = 'center';
-    this.ctx.textBaseline = 'middle';
-    this.ctx.fillText('💕 ¡Mimitos! 💕', centerX, centerY - 100);
-
-    this.ctx.font = '32px Arial';
-    this.ctx.fillText(`${state.tapsCount} taps`, centerX, centerY - 20);
-
-    // Calcular % de progreso ganado
-    const progressPercent = (state.tapsCount * 0.2).toFixed(1);
-    this.ctx.font = '24px Arial';
-    this.ctx.fillText(`+${progressPercent}% de crecimiento`, centerX, centerY + 40);
-
-    // Botón para continuar
-    const buttonX = centerX - 100;
-    const buttonY = centerY + 120;
-    const buttonW = 200;
-    const buttonH = 50;
-
-    this.ctx.fillStyle = '#ff69b4';
-    this.ctx.fillRect(buttonX, buttonY, buttonW, buttonH);
-
-    this.ctx.strokeStyle = '#000';
-    this.ctx.lineWidth = 3;
-    this.ctx.strokeRect(buttonX, buttonY, buttonW, buttonH);
-
-    this.ctx.fillStyle = '#fff';
-    this.ctx.font = 'bold 24px Arial';
-    this.ctx.fillText('Continuar', centerX, buttonY + buttonH / 2);
-
     this.ctx.restore();
   }
 

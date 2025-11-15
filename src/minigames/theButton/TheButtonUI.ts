@@ -451,11 +451,22 @@ export class TheButtonUI {
       this.ctx.textAlign = 'center';
       this.ctx.fillText(`Score: ${state.score}`, centerX, centerY + 100);
 
+      // Calcular estrellas de diversión según performance
+      const scorePercentage = this.game.getScorePercentage() / 100; // Convertir a 0-1
+      let funStars = 1;
+      if (scorePercentage >= 0.7) funStars = 3;
+      else if (scorePercentage >= 0.3) funStars = 2;
+
+      this.ctx.font = 'bold 20px Arial';
+      this.ctx.fillStyle = '#4CAF50'; // Verde para diversión
+      this.ctx.fillText(`+${funStars} ⭐ Diversión`, centerX, centerY + 135);
+
       const rewards = this.game.calculateRewards();
       this.ctx.font = 'bold 16px Arial';
       this.ctx.textAlign = 'center';
+      this.ctx.fillStyle = '#000'; // Reset a negro
 
-      let rewardY = centerY + 140;
+      let rewardY = centerY + 165;
       if (rewards.tier1 > 0) {
         this.ctx.fillText(`⭐ Ingrediente Básico x${rewards.tier1}`, centerX, rewardY);
         rewardY += 25;

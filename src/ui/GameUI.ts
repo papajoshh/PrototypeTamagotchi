@@ -1149,7 +1149,7 @@ export class GameUI {
 
     // Decay del zoom residual de mimitos (progresivo después de terminar)
     if (this.mimitosResidualZoom > 1.0) {
-      this.mimitosResidualZoom = Math.max(1.0, this.mimitosResidualZoom - 0.3 * (1/60)); // Mismo decay que durante el juego
+      this.mimitosResidualZoom = Math.max(1.0, this.mimitosResidualZoom - 1.5 * (1/60)); // Easeout rápido
     }
 
     // PRIORIDAD MÁXIMA: Pantallas de Servicios Sociales (bloquean TODO)
@@ -1486,14 +1486,16 @@ export class GameUI {
 
     // Centro del canvas
     const centerX = this.canvas.width / 2;
-    const centerY = 300;
+    // Huevo y Bebé más abajo para mejor centrado (son más pequeños)
+    const centerY = (this.pet.stage === LifeStage.Egg || this.pet.stage === LifeStage.Baby) ? 330 : 300;
 
     // Try to get sprite
     const sprite = this.getSpriteForPet();
 
     if (sprite && sprite.complete && sprite.naturalHeight > 0) {
       // Render sprite manteniendo aspect ratio
-      const maxSize = 200; // Tamaño máximo (width o height)
+      // Huevo y Bebé son la mitad de pequeño que otros pets
+      const maxSize = (this.pet.stage === LifeStage.Egg || this.pet.stage === LifeStage.Baby) ? 100 : 200;
       const aspectRatio = sprite.naturalWidth / sprite.naturalHeight;
 
       let renderWidth, renderHeight;
@@ -1597,12 +1599,12 @@ export class GameUI {
     this.ctx.font = '14px Arial';
     this.ctx.fillStyle = '#000';
     const hungerStars = Math.ceil(this.pet.hunger.getStars());
-    this.ctx.fillText(`Hambre: ${'⭐'.repeat(hungerStars)}${'☆'.repeat(3 - hungerStars)}`, x, y);
+    this.ctx.fillText(`Hambre: ${'⭐'.repeat(hungerStars)}${'☆'.repeat(5 - hungerStars)}`, x, y);
     y += 25;
 
     // Aburrimiento
     const boringStars = Math.ceil(this.pet.boring.getStars());
-    this.ctx.fillText(`Diversión: ${'⭐'.repeat(boringStars)}${'☆'.repeat(3 - boringStars)}`, x, y);
+    this.ctx.fillText(`Diversión: ${'⭐'.repeat(boringStars)}${'☆'.repeat(5 - boringStars)}`, x, y);
     y += 25;
 
     // Personalidad
@@ -2625,9 +2627,9 @@ export class GameUI {
       this.ctx.font = 'bold 16px Arial';
       this.ctx.fillText(selectedMinigame.name, infoX, startY + 30);
 
-      // Estrellas de diversión
+      // Estrellas de diversión (1-3 según performance)
       this.ctx.font = '14px Arial';
-      this.ctx.fillText(`Diversión: ${'⭐'.repeat(selectedMinigame.stars)}`, infoX, startY + 55);
+      this.ctx.fillText(`Diversión: 1-3 ⭐`, infoX, startY + 55);
 
       // Personalidad asociada
       this.ctx.fillText(`Personalidad: ${selectedMinigame.personality}`, infoX, startY + 75);
@@ -2851,8 +2853,10 @@ export class GameUI {
     this.activeMinigame = null;
 
     // Jugar minijuego (maneja diversión + añade ingredientes al inventario según score)
-    const rewards = this.pet.play(personality, scorePercentage);
-    console.log(`[GameUI] Minigame completed with ${scorePercentage.toFixed(1)}% score, rewards:`, rewards.map(r => r.name));
+    const result = this.pet.play(personality, scorePercentage);
+    const rewards = result.ingredients;
+    const funStars = result.funStars;
+    console.log(`[GameUI] Minigame completed with ${scorePercentage.toFixed(1)}% score, rewards:`, rewards.map(r => r.name), `+${funStars} fun stars`);
 
     // Calcular counts por tier para la animación
     const rewardCounts = { tier1: 0, tier2: 0, tier3: 0 };
@@ -2873,8 +2877,22 @@ export class GameUI {
     this.showingRewards = false;
     this.minigameRewards = null;
 
+    // Mostrar recompensa de diversión flotante
+    await this.showFunReward(funStars);
+
     // Mostrar recuerdo flotante
     await this.showMinigameMemory(personality);
+  }
+
+  private async showFunReward(funStars: number): Promise<void> {
+    this.showingFeedingRewards = true;
+
+    this.feedingRewards.onComplete = () => {
+      this.showingFeedingRewards = false;
+    };
+
+    // Show fun stars with text
+    await this.feedingRewards.showFunStars(funStars);
   }
 
   private async showMinigameMemory(personality: string): Promise<void> {

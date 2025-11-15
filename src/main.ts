@@ -328,9 +328,9 @@ console.log('  - pet.memorySystem - Check memories');
 
 // Función de debug para mimitos
 (window as any).activateMimitos = () => {
-  // Poner hambre y diversión a 3 estrellas usando métodos públicos
-  pet.hunger.satiate(3); // Saciar completamente
-  pet.boring.entertain(); // Entretener completamente (1 vez = 3 estrellas)
+  // Poner hambre y diversión a 5 estrellas usando métodos públicos
+  pet.hunger.satiate(5); // Saciar completamente
+  pet.boring.entertain(5); // Entretener completamente (5 estrellas)
 
   // Activar DIRECTAMENTE el flag de mimitos (no esperar al update)
   pet.isDemandingMimitos = true;

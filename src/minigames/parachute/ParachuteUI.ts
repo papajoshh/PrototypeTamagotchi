@@ -698,12 +698,23 @@ export class ParachuteUI {
       this.ctx.textAlign = 'center';
       this.ctx.fillText(`${state.score}`, centerX, centerY + 100);
 
+      // Calcular diversión según score
+      const scorePercentage = this.game.getScorePercentage() / 100;
+      let funStars = 1;
+      if (scorePercentage >= 0.7) funStars = 3;
+      else if (scorePercentage >= 0.3) funStars = 2;
+
+      this.ctx.font = 'bold 20px Arial';
+      this.ctx.fillStyle = '#4CAF50';
+      this.ctx.fillText(`+${funStars} ⭐ Diversión`, centerX, centerY + 135);
+
       // Mostrar premios ganados
       const rewards = this.game.calculateRewards();
       this.ctx.font = 'bold 16px Arial';
       this.ctx.textAlign = 'center';
+      this.ctx.fillStyle = '#000';
 
-      let rewardY = centerY + 140;
+      let rewardY = centerY + 165;
 
       if (rewards.tier1 > 0) {
         this.ctx.fillText(`⭐ Ingrediente Básico x${rewards.tier1}`, centerX, rewardY);

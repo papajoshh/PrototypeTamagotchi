@@ -422,7 +422,14 @@ export class EdgyBunBunUI {
     this.ctx.fillStyle = '#fff';
     this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
-    // Timer y Score en la parte superior
+    // Renderizar plataformas y mascota PRIMERO (antes de la barra superior)
+    this.renderGameArea(state);
+
+    // Barra blanca superior para ocultar plataformas que suben detrás del score/tiempo
+    this.ctx.fillStyle = '#fff';
+    this.ctx.fillRect(0, 0, this.canvas.width, 80);
+
+    // Timer y Score en la parte superior (renderizados SOBRE la barra blanca)
     const topY = 40;
 
     this.ctx.fillStyle = '#000';
@@ -433,10 +440,11 @@ export class EdgyBunBunUI {
     this.ctx.font = 'bold 32px Arial';
     this.ctx.fillText(`Score: ${state.score}`, this.canvas.width / 2 + 120, topY);
 
-    // Renderizar plataformas y mascota
-    this.renderGameArea(state);
+    // Barra blanca inferior para ocultar plataformas detrás de los indicadores
+    this.ctx.fillStyle = '#fff';
+    this.ctx.fillRect(0, this.canvas.height - 50, this.canvas.width, 50);
 
-    // Indicadores de tap
+    // Indicadores de tap (renderizados SOBRE la barra blanca)
     this.ctx.fillStyle = '#ccc';
     this.ctx.font = '16px Arial';
     this.ctx.fillText('TAP', this.canvas.width / 4, this.canvas.height - 20);
@@ -463,7 +471,7 @@ export class EdgyBunBunUI {
     const gameAreaY = 80;
     const gameAreaHeight = 480;
     const platformHeight = 40;
-    const platformSpacing = 70; // Espacio vertical entre plataformas
+    const platformSpacing = 123; // Espacio vertical entre plataformas (70 original + 1/3 de 70 más)
     const platformWidth = 150; // Reducido para evitar choque en el centro
     const maxVisibleLevels = 10;
 
@@ -490,8 +498,8 @@ export class EdgyBunBunUI {
       // Durante animaciones: seguir EXACTAMENTE la posición del BunBun (sin lag)
       this.cameraY = currentBunBunY;
     } else {
-      // Cuando está parado: movimiento suave con interpolación
-      const smoothFactor = 0.3;
+      // Cuando está parado: movimiento suave con interpolación (aumentado para más fluidez)
+      const smoothFactor = 0.6;
       this.cameraY += (currentBunBunY - this.cameraY) * smoothFactor;
     }
 
@@ -732,8 +740,20 @@ export class EdgyBunBunUI {
       this.ctx.fillText(`${state.score}`, centerX, centerY + 100);
 
       // Calcular premios según porcentaje
-      const maxExpectedScore = 85;
+      const maxExpectedScore = 115;
       const scorePercentage = Math.min((state.score / maxExpectedScore) * 100, 100);
+
+      // Calcular estrellas de diversión según performance
+      let funStars = 1;
+      if (scorePercentage >= 70) funStars = 3;
+      else if (scorePercentage >= 30) funStars = 2;
+
+      this.ctx.font = 'bold 20px Arial';
+      this.ctx.fillStyle = '#4CAF50'; // Verde para diversión
+      this.ctx.fillText(`+${funStars} ⭐ Diversión`, centerX, centerY + 135);
+
+      // Reset estilo a negro
+      this.ctx.fillStyle = '#000';
 
       // Calcular recompensas
       const rewards = {
@@ -756,7 +776,7 @@ export class EdgyBunBunUI {
       this.ctx.font = 'bold 16px Arial';
       this.ctx.textAlign = 'center';
 
-      let rewardY = centerY + 140;
+      let rewardY = centerY + 165;
 
       if (rewards.tier1 > 0) {
         this.ctx.fillText(`⭐ Ingrediente Básico x${rewards.tier1}`, centerX, rewardY);

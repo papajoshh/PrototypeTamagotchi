@@ -89,6 +89,42 @@ export class FeedingRewards {
     });
   }
 
+  async showFunStars(funStars: number): Promise<void> {
+    this.stars = [];
+    this.memories = [];
+    this.isAnimating = true;
+
+    // Add stars one by one with delay
+    for (let i = 0; i < funStars; i++) {
+      await new Promise<void>((resolve) => {
+        setTimeout(() => {
+          this.addFloatingStar();
+          resolve();
+        }, i * 300); // 300ms between each star
+      });
+    }
+
+    // Add text after stars
+    const funText = funStars === 1 ? '+1 ⭐ Diversión' : `+${funStars} ⭐ Diversión`;
+    await new Promise<void>((resolve) => {
+      setTimeout(() => {
+        this.addFloatingMemory(funText);
+        resolve();
+      }, 200); // 200ms after last star
+    });
+
+    // Wait for animations to complete
+    await new Promise<void>((resolve) => {
+      setTimeout(() => {
+        this.isAnimating = false;
+        if (this.onComplete) {
+          this.onComplete();
+        }
+        resolve();
+      }, 2000); // 2 seconds for animations to finish
+    });
+  }
+
   private addFloatingStar(): void {
     const centerX = this.canvas.width / 2;
     const centerY = this.canvas.height / 2;
